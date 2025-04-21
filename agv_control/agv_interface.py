@@ -39,14 +39,14 @@ class AGVInterface(Node):
         self.current_waypoint_index = 0
         self.current_pose = None
         self.map_data = None
-        self.pid = PID(Kp=2.5, Ki=0.0, Kd=0.7)  # Refined for stability
+        self.pid = PID(Kp=2.5, Ki=0.0, Kd=0.7)  # Stable gains
         self.linear_velocity = 10.0  # Default 10 m/s
         self.min_velocity = 0.1
-        self.waypoint_threshold = 0.4  # Increased for high speeds
+        self.waypoint_threshold = 0.4
         self.lookahead_distance = 0.5
-        self.max_angular_vel = 1.0  # Limit turn rate
-        self.max_accel = 5.0  # Max acceleration (m/s^2)
-        self.prev_linear_vel = 0.0  # For rate limiting
+        self.max_angular_vel = 0.8  # Reduced for stability
+        self.max_accel = 10.0  # Smoother transitions
+        self.prev_linear_vel = 0.0
         self.actual_path = []
         self.waypoints = []
         self.mode = 'trajectory'
@@ -432,8 +432,6 @@ class AGVInterface(Node):
                         "w: Toggle waypoints",
                         "k: Save waypoints",
                         "l: Load waypoints",
-                        "Left click: Add waypoint",
-                        "Right click: Remove last waypoint",
                         "Troubleshooting:",
                         f"- Check odom: ros2 topic echo {self.get_parameter('odom_topic').value}",
                         "- Verify plugin: find /opt/ros/humble",
@@ -493,7 +491,7 @@ class AGVInterface(Node):
             # PID control
             dt = 0.02  # Match timer rate
             steering_angle = self.pid.compute(error, dt)
-            steering_angle = max(min(steering_angle, self.max_angular_vel), -self.max_angular_vel)  # Rate limit
+            steering_angle = max(min(steering_angle, self.max_angular_vel), -self.max_angular_vel)
 
             # Rate limit linear velocity
             twist = Twist()
@@ -501,7 +499,7 @@ class AGVInterface(Node):
                                self.prev_linear_vel - self.max_accel * dt)
             twist.angular.z = steering_angle
             self.cmd_vel_pub.publish(twist)
-            self.prev_linear_vel = twist.linear.x  # Update for next cycle
+            self.prev_linear_vel = twist.linear.x
             self.get_logger().debug(f'Distance: {distance:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {twist.linear.x:.2f}m/s')
 
         except Exception as e:
