@@ -40,7 +40,9 @@ class AGVInterface(Node):
         self.current_pose = None
         self.map_data = None
         self.pid = PID(Kp=1.5, Ki=0.01, Kd=0.3)
-        self.linear_velocity = 0.5
+        self.linear_velocity = 1.0  # Increased default speed
+        self.max_velocity = 3.0  # Max speed limit
+        self.min_velocity = 0.1  # Min speed limit
         self.waypoint_threshold = 0.2
         self.actual_path = []
         self.waypoints = []
@@ -58,8 +60,8 @@ class AGVInterface(Node):
 
         # Pygame setup
         pygame.init()
-        self.screen_width = 800
-        self.screen_height = 600
+        self.screen_width = 1200  # Increased window size
+        self.screen_height = 800  # Increased window size
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
         pygame.display.set_caption('AGV Interface')
         self.bg_color = (255, 255, 255)
@@ -202,6 +204,12 @@ class AGVInterface(Node):
                     elif event.key == pygame.K_d and pygame.key.get_mods() & pygame.KMOD_SHIFT:
                         self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
                         self.get_logger().info(f'Decreased Kd to {self.pid.Kd}')
+                    elif event.key == pygame.K_u:  # Increase speed
+                        self.linear_velocity = min(self.max_velocity, self.linear_velocity + 0.1)
+                        self.get_logger().info(f'Increased speed to {self.linear_velocity:.2f} m/s')
+                    elif event.key == pygame.K_j:  # Decrease speed
+                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.1)
+                        self.get_logger().info(f'Decreased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
                         self.scale = min(200, self.scale + 10)
                         self.get_logger().info(f'Zoom in: scale={self.scale}')
@@ -357,6 +365,7 @@ class AGVInterface(Node):
                 texts = [
                     f'Mode: {self.mode.capitalize()}',
                     f'Kp={self.pid.Kp:.2f} Ki={self.pid.Ki:.3f} Kd={self.pid.Kd:.2f}',
+                    f'Speed: {self.linear_velocity:.2f} m/s',  # Added speed display
                     f'Scale: {self.scale} px/m',
                     f'Waypoint: {self.current_waypoint_index}/{len(self.path) if self.path else 0}',
                     f'Pose: ({self.current_pose.position.x:.2f}, {self.current_pose.position.y:.2f})' if self.current_pose else 'Pose: N/A',
@@ -384,7 +393,7 @@ class AGVInterface(Node):
                         f"AGV {odom_status}!",
                         "Check:",
                         f"- Odom topic: {self.get_parameter('odom_topic').value}",
-                        "- Plugin: libgazebo_ros_ackermann_drive.so",
+                        "- Plugin: libgazebo_ros_diff_drive.so",
                         "- Gazebo logs for errors",
                         "- ROS topic: ros2 topic echo /odom",
                         "- ROS/Gazebo versions",
@@ -409,6 +418,8 @@ class AGVInterface(Node):
                         "c: Clear waypoints",
                         "p/i/d: Increase PID gains",
                         "Shift+p/i/d: Decrease PID gains",
+                        "u: Increase speed (+0.1 m/s)",  # Added
+                        "j: Decrease speed (-0.1 m/s)",  # Added
                         "+/-: Zoom in/out",
                         "Arrows: Pan view",
                         "r: Reset view",

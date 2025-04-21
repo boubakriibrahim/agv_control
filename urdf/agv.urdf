@@ -186,7 +186,7 @@
     <child link="front_left_wheel"/>
     <origin xyz="0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Caster wheel, free rotation -->
-    <limit effort="100" velocity="10"/>
+    <limit effort="100" velocity="20"/> <!-- Increased velocity limit -->
     <dynamics damping="0.1" friction="0.1"/>
   </joint>
   <joint name="base_to_front_right" type="continuous">
@@ -194,7 +194,7 @@
     <child link="front_right_wheel"/>
     <origin xyz="0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Caster wheel, free rotation -->
-    <limit effort="100" velocity="10"/>
+    <limit effort="100" velocity="20"/> <!-- Increased velocity limit -->
     <dynamics damping="0.1" friction="0.1"/>
   </joint>
   <joint name="base_to_rear_left" type="continuous">
@@ -202,7 +202,7 @@
     <child link="rear_left_wheel"/>
     <origin xyz="-0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Drive axis -->
-    <limit effort="100" velocity="10"/>
+    <limit effort="200" velocity="20"/> <!-- Increased effort and velocity -->
     <dynamics damping="0.1" friction="0.1"/>
   </joint>
   <joint name="base_to_rear_right" type="continuous">
@@ -210,7 +210,7 @@
     <child link="rear_right_wheel"/>
     <origin xyz="-0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Drive axis -->
-    <limit effort="100" velocity="10"/>
+    <limit effort="200" velocity="20"/> <!-- Increased effort and velocity -->
     <dynamics damping="0.1" friction="0.1"/>
   </joint>
 
@@ -233,8 +233,8 @@
       <right_joint>base_to_rear_right</right_joint>
       <wheel_separation>0.9</wheel_separation> <!-- Distance between rear wheels -->
       <wheel_diameter>0.3</wheel_diameter>
-      <max_wheel_torque>100.0</max_wheel_torque>
-      <max_wheel_acceleration>10.0</max_wheel_acceleration>
+      <max_wheel_torque>200.0</max_wheel_torque> <!-- Increased for higher speed -->
+      <max_wheel_acceleration>20.0</max_wheel_acceleration> <!-- Increased for faster acceleration -->
       <update_rate>100.0</update_rate>
     </plugin>
   </gazebo>
