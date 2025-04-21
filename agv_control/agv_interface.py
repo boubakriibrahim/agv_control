@@ -35,8 +35,8 @@ class AGVInterface(Node):
         self.current_waypoint_index = 0
         self.current_pose = None
         self.map_data = None
-        self.pid = PID(Kp=1.5, Ki=0.01, Kd=0.3)  # Tuned for AGV
-        self.linear_velocity = 0.3
+        self.pid = PID(Kp=1.5, Ki=0.01, Kd=0.3)
+        self.linear_velocity = 0.5  # Increased for better motion
         self.waypoint_threshold = 0.2
         self.actual_path = []
         self.waypoints = []
@@ -59,6 +59,9 @@ class AGVInterface(Node):
         self.agv_radius = 10
         self.scale = 100
         self.clock = pygame.time.Clock()
+        # Initial screen fill
+        self.screen.fill(self.bg_color)
+        pygame.display.flip()
 
     def odom_callback(self, msg):
         self.current_pose = msg.pose.pose
@@ -80,173 +83,224 @@ class AGVInterface(Node):
             pose = PoseStamped()
             pose.header.frame_id = 'odom'
             pose.header.stamp = path.header.stamp
-            pose.pose.position.x = (wp[0] - self.screen_width / 2) / self.scale
-            pose.pose.position.y = (wp[1] - self.screen_height / 2) / self.scale
+            x = (wp[0] - self.screen_width / 2) / self.scale
+            y = (wp[1] - self.screen_height / 2) / self.scale
+            if abs(x) > 10 or abs(y) > 10:  # Prevent out-of-bounds
+                self.get_logger().warn(f'Skipping waypoint ({x}, {y}) out of bounds')
+                continue
+            pose.pose.position.x = x
+            pose.pose.position.y = y
             pose.pose.position.z = 0.0
             pose.pose.orientation.w = 1.0
             path.poses.append(pose)
+        if not path.poses:
+            self.get_logger().warn('No valid waypoints to publish')
+            return
         self.path = path.poses
         self.current_waypoint_index = 0
         self.actual_path.clear()
         self.path_pub.publish(path)
-        self.get_logger().info(f'Published trajectory with {len(self.waypoints)} waypoints')
+        self.get_logger().info(f'Published trajectory with {len(self.path)} waypoints')
         self.waypoints.clear()
 
     def control_loop(self):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                rclpy.shutdown()
-                sys.exit()
-            elif event.type == pygame.MOUSEBUTTONDOWN and self.mode == 'trajectory':
-                if event.button == 1:
-                    x, y = event.pos
-                    self.waypoints.append((x, y))
-                    self.get_logger().info(f'Added waypoint at ({x}, {y})')
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_s and self.mode == 'trajectory':
-                    self.publish_trajectory()
-                elif event.key == pygame.K_c:
-                    self.waypoints.clear()
-                    self.get_logger().info('Cleared waypoints')
-                elif event.key == pygame.K_t:
-                    self.mode = 'trajectory'
-                    self.get_logger().info('Switched to trajectory mode')
-                elif event.key == pygame.K_v:
-                    self.mode = 'view'
-                    self.get_logger().info('Switched to view mode')
-                elif event.key == pygame.K_p:  # Fixed: lowercase
-                    self.pid.Kp += 0.1
-                    self.get_logger().info(f'Increased Kp to {self.pid.Kp}')
-                elif event.key == pygame.K_p and pygame.key.get_mods() & pygame.KMOD_SHIFT:  # Shift+p
-                    self.pid.Kp = max(0.1, self.pid.Kp - 0.1)
-                    self.get_logger().info(f'Decreased Kp to {self.pid.Kp}')
-                elif event.key == pygame.K_i:  # Fixed: lowercase
-                    self.pid.Ki += 0.001
-                    self.get_logger().info(f'Increased Ki to {self.pid.Ki}')
-                elif event.key == pygame.K_i and pygame.key.get_mods() & pygame.KMOD_SHIFT:  # Shift+i
-                    self.pid.Ki = max(0.0, self.pid.Ki - 0.001)
-                    self.get_logger().info(f'Decreased Ki to {self.pid.Ki}')
-                elif event.key == pygame.K_d:  # Fixed: lowercase
-                    self.pid.Kd += 0.05
-                    self.get_logger().info(f'Increased Kd to {self.pid.Kd}')
-                elif event.key == pygame.K_d and pygame.key.get_mods() & pygame.KMOD_SHIFT:  # Shift+d
-                    self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
-                    self.get_logger().info(f'Decreased Kd to {self.pid.Kd}')
+        try:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    rclpy.shutdown()
+                    sys.exit()
+                elif event.type == pygame.MOUSEBUTTONDOWN and self.mode == 'trajectory':
+                    if event.button == 1:
+                        x, y = event.pos
+                        self.waypoints.append((x, y))
+                        self.get_logger().info(f'Added waypoint at ({x}, {y})')
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_s and self.mode == 'trajectory':
+                        self.publish_trajectory()
+                    elif event.key == pygame.K_c:
+                        self.waypoints.clear()
+                        self.get_logger().info('Cleared waypoints')
+                    elif event.key == pygame.K_t:
+                        self.mode = 'trajectory'
+                        self.get_logger().info('Switched to trajectory mode')
+                    elif event.key == pygame.K_v:
+                        self.mode = 'view'
+                        self.get_logger().info('Switched to view mode')
+                    elif event.key == pygame.K_p:
+                        self.pid.Kp += 0.1
+                        self.get_logger().info(f'Increased Kp to {self.pid.Kp}')
+                    elif event.key == pygame.K_p and pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                        self.pid.Kp = max(0.1, self.pid.Kp - 0.1)
+                        self.get_logger().info(f'Decreased Kp to {self.pid.Kp}')
+                    elif event.key == pygame.K_i:
+                        self.pid.Ki += 0.001
+                        self.get_logger().info(f'Increased Ki to {self.pid.Ki}')
+                    elif event.key == pygame.K_i and pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                        self.pid.Ki = max(0.0, self.pid.Ki - 0.001)
+                        self.get_logger().info(f'Decreased Ki to {self.pid.Ki}')
+                    elif event.key == pygame.K_d:
+                        self.pid.Kd += 0.05
+                        self.get_logger().info(f'Increased Kd to {self.pid.Kd}')
+                    elif event.key == pygame.K_d and pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                        self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
+                        self.get_logger().info(f'Decreased Kd to {self.pid.Kd}')
 
-        if self.path is None or self.current_pose is None:
-            self.get_logger().warn('Waiting for path or pose data')
-            return
+            self.screen.fill(self.bg_color)
 
-        if self.current_waypoint_index >= len(self.path):
+            # Draw grid
+            try:
+                for x in range(0, self.screen_width, 100):
+                    pygame.draw.line(self.screen, self.grid_color, (x, 0), (x, self.screen_height), 1)
+                for y in range(0, self.screen_height, 100):
+                    pygame.draw.line(self.screen, self.grid_color, (0, y), (self.screen_width, y), 1)
+            except Exception as e:
+                self.get_logger().error(f'Grid drawing error: {e}')
+
+            # Draw obstacles
+            if self.map_data:
+                try:
+                    width = self.map_data.info.width
+                    height = self.map_data.info.height
+                    resolution = self.map_data.info.resolution
+                    origin_x = self.map_data.info.origin.position.x
+                    origin_y = self.map_data.info.origin.position.y
+                    for i in range(height):
+                        for j in range(width):
+                            if self.map_data.data[i * width + j] > 50:
+                                x = (j * resolution + origin_x) * self.scale + self.screen_width / 2
+                                y = (i * resolution + origin_y) * self.scale + self.screen_height / 2
+                                size = resolution * self.scale
+                                if 0 <= x < self.screen_width and 0 <= y < self.screen_height:
+                                    pygame.draw.rect(self.screen, self.obstacle_color, (x, y, size, size))
+                except Exception as e:
+                    self.get_logger().error(f'Obstacle drawing error: {e}')
+
+            # Draw planned trajectory
+            if self.path:
+                try:
+                    points = []
+                    for pose in self.path:
+                        x = pose.pose.position.x * self.scale + self.screen_width / 2
+                        y = pose.pose.position.y * self.scale + self.screen_height / 2
+                        if 0 <= x < self.screen_width and 0 <= y < self.screen_height:
+                            points.append((x, y))
+                            pygame.draw.circle(self.screen, self.waypoint_color, (x, y), self.point_radius)
+                    if len(points) > 1:
+                        pygame.draw.lines(self.screen, self.trajectory_color, False, points, 2)
+                except Exception as e:
+                    self.get_logger().error(f'Trajectory drawing error: {e}')
+
+            # Draw waypoints in trajectory mode
+            if self.mode == 'trajectory' and self.waypoints:
+                try:
+                    if len(self.waypoints) > 1:
+                        pygame.draw.lines(self.screen, self.trajectory_color, False, self.waypoints, 2)
+                    for point in self.waypoints:
+                        if 0 <= point[0] < self.screen_width and 0 <= point[1] < self.screen_height:
+                            pygame.draw.circle(self.screen, self.waypoint_color, point, self.point_radius)
+                except Exception as e:
+                    self.get_logger().error(f'Waypoint drawing error: {e}')
+
+            # Draw actual path
+            if len(self.actual_path) > 1:
+                try:
+                    actual_points = []
+                    for x, y in self.actual_path:
+                        px = x * self.scale + self.screen_width / 2
+                        py = y * self.scale + self.screen_height / 2
+                        if 0 <= px < self.screen_width and 0 <= py < self.screen_height:
+                            actual_points.append((px, py))
+                    if len(actual_points) > 1:
+                        pygame.draw.lines(self.screen, self.actual_path_color, False, actual_points, 1)
+                except Exception as e:
+                    self.get_logger().error(f'Actual path drawing error: {e}')
+
+            # Draw AGV
+            if self.current_pose:
+                try:
+                    agv_x = self.current_pose.position.x * self.scale + self.screen_width / 2
+                    agv_y = self.current_pose.position.y * self.scale + self.screen_height / 2
+                    if 0 <= agv_x < self.screen_width and 0 <= agv_y < self.screen_height:
+                        pygame.draw.circle(self.screen, self.agv_color, (agv_x, agv_y), self.agv_radius)
+                except Exception as e:
+                    self.get_logger().error(f'AGV drawing error: {e}')
+
+            # Draw labels
+            try:
+                font = pygame.font.SysFont(None, 24)
+                mode_text = font.render(f'Mode: {self.mode.capitalize()}', True, (0, 0, 0))
+                pid_text = font.render(f'Kp={self.pid.Kp:.2f} Ki={self.pid.Ki:.3f} Kd={self.pid.Kd:.2f}', True, (0, 0, 0))
+                self.screen.blit(mode_text, (10, 10))
+                self.screen.blit(pid_text, (10, 40))
+            except Exception as e:
+                self.get_logger().error(f'Label drawing error: {e}')
+
+            pygame.display.flip()
+            self.clock.tick(30)
+
+            if self.path is None or self.current_pose is None:
+                self.get_logger().warn('Waiting for path or pose data')
+                return
+
+            if self.current_waypoint_index >= len(self.path):
+                twist = Twist()
+                self.cmd_vel_pub.publish(twist)
+                self.get_logger().info('Trajectory completed')
+                return
+
+            target_pose = self.path[self.current_waypoint_index].pose
+            current_x = self.current_pose.position.x
+            current_y = self.current_pose.position.y
+            target_x = target_pose.position.x
+            target_y = target_pose.position.y
+
+            distance = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
+            if distance < self.waypoint_threshold:
+                self.current_waypoint_index += 1
+                if self.current_waypoint_index < len(self.path):
+                    self.get_logger().info(f'Reached waypoint {self.current_waypoint_index - 1}')
+                return
+
+            desired_heading = atan2(target_y - current_y, target_x - current_x)
+            current_heading = self.get_yaw(self.current_pose.orientation)
+            error = desired_heading - current_heading
+            error = (error + pi) % (2 * pi) - pi
+
+            dt = 0.1
+            steering_angle = self.pid.compute(error, dt)
+            steering_angle = max(min(steering_angle, 0.9), -0.9)  # Match max_steering_angle
+
             twist = Twist()
+            twist.linear.x = self.linear_velocity
+            twist.angular.z = steering_angle
             self.cmd_vel_pub.publish(twist)
-            self.get_logger().info('Trajectory completed')
-            return
+            self.get_logger().debug(f'Steering: {steering_angle:.2f}, Velocity: {self.linear_velocity:.2f}')
 
-        target_pose = self.path[self.current_waypoint_index].pose
-        current_x = self.current_pose.position.x
-        current_y = self.current_pose.position.y
-        target_x = target_pose.position.x
-        target_y = target_pose.position.y
-
-        distance = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
-        if distance < self.waypoint_threshold:
-            self.current_waypoint_index += 1
-            if self.current_waypoint_index < len(self.path):
-                self.get_logger().info(f'Reached waypoint {self.current_waypoint_index - 1}')
-            return
-
-        desired_heading = atan2(target_y - current_y, target_x - current_x)
-        current_heading = self.get_yaw(self.current_pose.orientation)
-        error = desired_heading - current_heading
-        error = (error + pi) % (2 * pi) - pi
-
-        dt = 0.1
-        steering_angle = self.pid.compute(error, dt)
-        steering_angle = max(min(steering_angle, 0.7854), -0.7854)  # Match max_steering_angle
-
-        twist = Twist()
-        twist.linear.x = self.linear_velocity
-        twist.angular.z = steering_angle  # Ackermann plugin expects steering angle
-        self.cmd_vel_pub.publish(twist)
-        self.get_logger().debug(f'Steering: {steering_angle:.2f}, Velocity: {self.linear_velocity:.2f}')
-
-        self.screen.fill(self.bg_color)
-
-        # Draw grid
-        for x in range(0, self.screen_width, 100):
-            pygame.draw.line(self.screen, self.grid_color, (x, 0), (x, self.screen_height), 1)
-        for y in range(0, self.screen_height, 100):
-            pygame.draw.line(self.screen, self.grid_color, (0, y), (self.screen_width, y), 1)
-
-        # Draw obstacles
-        if self.map_data:
-            width = self.map_data.info.width
-            height = self.map_data.info.height
-            resolution = self.map_data.info.resolution
-            origin_x = self.map_data.info.origin.position.x
-            origin_y = self.map_data.info.origin.position.y
-            for i in range(height):
-                for j in range(width):
-                    if self.map_data.data[i * width + j] > 50:
-                        x = (j * resolution + origin_x) * self.scale + self.screen_width / 2
-                        y = (i * resolution + origin_y) * self.scale + self.screen_height / 2
-                        size = resolution * self.scale
-                        pygame.draw.rect(self.screen, self.obstacle_color, (x, y, size, size))
-
-        # Draw planned trajectory
-        if self.path:
-            points = []
-            for pose in self.path:
-                x = pose.pose.position.x * self.scale + self.screen_width / 2
-                y = pose.pose.position.y * self.scale + self.screen_height / 2
-                points.append((x, y))
-                pygame.draw.circle(self.screen, self.waypoint_color, (x, y), self.point_radius)
-            if len(points) > 1:
-                pygame.draw.lines(self.screen, self.trajectory_color, False, points, 2)
-
-        # Draw waypoints in trajectory mode
-        if self.mode == 'trajectory' and self.waypoints:
-            if len(self.waypoints) > 1:
-                pygame.draw.lines(self.screen, self.trajectory_color, False, self.waypoints, 2)
-            for point in self.waypoints:
-                pygame.draw.circle(self.screen, self.waypoint_color, point, self.point_radius)
-
-        # Draw actual path
-        if len(self.actual_path) > 1:
-            actual_points = [(x * self.scale + self.screen_width / 2, y * self.scale + self.screen_height / 2) for x, y in self.actual_path]
-            pygame.draw.lines(self.screen, self.actual_path_color, False, actual_points, 1)
-
-        # Draw AGV
-        if self.current_pose:
-            agv_x = current_x * self.scale + self.screen_width / 2
-            agv_y = current_y * self.scale + self.screen_height / 2
-            pygame.draw.circle(self.screen, self.agv_color, (agv_x, agv_y), self.agv_radius)
-
-        # Draw labels
-        font = pygame.font.SysFont(None, 24)
-        mode_text = font.render(f'Mode: {self.mode.capitalize()}', True, (0, 0, 0))
-        pid_text = font.render(f'Kp={self.pid.Kp:.2f} Ki={self.pid.Ki:.3f} Kd={self.pid.Kd:.2f}', True, (0, 0, 0))
-        self.screen.blit(mode_text, (10, 10))
-        self.screen.blit(pid_text, (10, 40))
-
-        pygame.display.flip()
-        self.clock.tick(30)
+        except Exception as e:
+            self.get_logger().error(f'Control loop error: {e}')
 
     def get_yaw(self, q):
-        siny_cosp = 2 * (q.w * q.z + q.x * q.y)
-        cosy_cosp = 1 - 2 * (q.y**2 + q.z**2)
-        yaw = atan2(siny_cosp, cosy_cosp)
-        return yaw
+        try:
+            siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+            cosy_cosp = 1 - 2 * (q.y**2 + q.z**2)
+            yaw = atan2(siny_cosp, cosy_cosp)
+            return yaw
+        except Exception as e:
+            self.get_logger().error(f'Yaw calculation error: {e}')
+            return 0.0
 
 def main(args=None):
     rclpy.init(args=args)
     node = AGVInterface()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
-    pygame.quit()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+        pygame.quit()
 
 if __name__ == '__main__':
     main()
