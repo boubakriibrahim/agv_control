@@ -4,77 +4,52 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
-import subprocess
 
 def generate_launch_description():
-    # locate files
-    pkg_share = get_package_share_directory('agv_control')
-    urdf_file  = os.path.join(pkg_share, 'urdf',   'agv.urdf')
-    world_file = os.path.join(pkg_share, 'worlds','agv_world.world')
-    gazebo_share = get_package_share_directory('gazebo_ros')
+    pkg = get_package_share_directory('agv_control')
+    world = os.path.join(pkg, 'worlds', 'agv_world.world')
+    urdf  = os.path.join(pkg, 'urdf',   'agv.urdf')
 
-    # sanity checks
-    if not os.path.exists(urdf_file):
-        raise FileNotFoundError(f'URDF not found: {urdf_file}')
-    if not os.path.exists(world_file):
-        raise FileNotFoundError(f'World not found: {world_file}')
-
-    # Validate URDF on disk
-    try:
-        subprocess.run(
-            ['check_urdf', urdf_file],
-            check=True, capture_output=True, text=True
-        )
-        print('URDF validation passed')
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f'URDF validation failed:\n{e.stderr}')
-
-    # 1) Launch Gazebo with ROS plugins (init + factory)
-    gazebo = IncludeLaunchDescription(
+    # 1) start Gazebo (loads ros_init & ros_factory plugins)
+    gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(gazebo_share, 'launch', 'gazebo.launch.py')
+            os.path.join(
+                get_package_share_directory('gazebo_ros'),
+                'launch', 'gazebo.launch.py')
         ),
-        launch_arguments={'world': world_file}.items()
+        launch_arguments={'world': world}.items()
     )
 
-    # 2) robot_state_publisher for your URDF
+    # 2) publish robot_state_publisher & spawn_entity
     rsp = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        name='robot_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': open(urdf_file).read(),
-            'publish_robot_description': True,
-            # enable sim time so your interface and tf use /clock
-            'use_sim_time': True,
+            'robot_description': open(urdf).read(),
+            'use_sim_time': True
         }]
     )
-
-    # 3) spawn_entity to inject your AGV model into Gazebo
     spawn = Node(
         package='gazebo_ros',
         executable='spawn_entity.py',
-        name='spawn_agv',
+        arguments=['-entity','agv','-file',urdf,'-x','0','-y','0','-z','0.3','-timeout','30'],
+        output='screen'
+    )
+
+    # 3) **YOUR** AGV interface node
+    interface = Node(
+        package='agv_control',
+        executable='agv_interface',
         output='screen',
-        arguments=[
-            '-entity', 'agv',
-            '-file',    urdf_file,
-            '-x',       '0', '-y', '0', '-z', '0.3',
-            '-timeout', '30'
-        ]
+        parameters=[{'use_sim_time': True}]
     )
 
     return LaunchDescription([
-        LogInfo(msg='⏳ Starting Gazebo…'),
-        gazebo,
-        # give Gazebo 5s to load init+factory and start up
+        LogInfo(msg='Starting Gazebo…'),
+        gazebo_launch,
         TimerAction(
-            period=5.0,
-            actions=[
-                LogInfo(msg='🚀 Publishing robot_state_publisher and spawning AGV'),
-                rsp,
-                spawn,
-            ],
-        ),
+            period=5.0,  # give Gazebo time to come up
+            actions=[rsp, spawn, interface]
+        )
     ])
