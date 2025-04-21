@@ -5,8 +5,8 @@ from geometry_msgs.msg import Twist, PoseStamped
 from math import atan2, sqrt, pi, cos, sin
 import pygame
 import sys
-import numpy as np
 import time
+import os
 
 class PID:
     def __init__(self, Kp, Ki, Kd):
@@ -47,6 +47,7 @@ class AGVInterface(Node):
         self.view_offset_y = 0
         self.show_grid = True
         self.show_help = False
+        self.show_waypoints = True
         self.blink_state = True
         self.last_blink_time = time.time()
 
@@ -66,6 +67,7 @@ class AGVInterface(Node):
         self.obstacle_color = (100, 100, 100)
         self.placeholder_color = (150, 150, 150)
         self.text_bg_color = (255, 255, 255, 180)
+        self.warning_color = (255, 100, 100, 200)
         self.point_radius = 5
         self.agv_radius = 10
         self.clock = pygame.time.Clock()
@@ -83,6 +85,29 @@ class AGVInterface(Node):
     def map_callback(self, msg):
         self.map_data = msg
         self.get_logger().info('Received map data')
+
+    def save_waypoints(self):
+        try:
+            with open('waypoints.txt', 'w') as f:
+                for x, y in self.waypoints:
+                    f.write(f'{x},{y}\n')
+            self.get_logger().info('Saved waypoints to waypoints.txt')
+        except Exception as e:
+            self.get_logger().error(f'Failed to save waypoints: {e}')
+
+    def load_waypoints(self):
+        try:
+            if os.path.exists('waypoints.txt'):
+                with open('waypoints.txt', 'r') as f:
+                    self.waypoints = []
+                    for line in f:
+                        x, y = map(float, line.strip().split(','))
+                        self.waypoints.append((x, y))
+                self.get_logger().info(f'Loaded {len(self.waypoints)} waypoints from waypoints.txt')
+            else:
+                self.get_logger().warn('No waypoints.txt file found')
+        except Exception as e:
+            self.get_logger().error(f'Failed to load waypoints: {e}')
 
     def publish_trajectory(self):
         if not self.waypoints:
@@ -199,6 +224,13 @@ class AGVInterface(Node):
                         self.view_offset_x = -self.current_pose.position.x * self.scale
                         self.view_offset_y = -self.current_pose.position.y * self.scale
                         self.get_logger().info(f'Centered view on AGV: offset=({self.view_offset_x}, {self.view_offset_y})')
+                    elif event.key == pygame.K_w:
+                        self.show_waypoints = not self.show_waypoints
+                        self.get_logger().info(f'Waypoint visibility: {self.show_waypoints}')
+                    elif event.key == pygame.K_k and self.mode == 'trajectory':
+                        self.save_waypoints()
+                    elif event.key == pygame.K_l and self.mode == 'trajectory':
+                        self.load_waypoints()
 
             self.screen.fill(self.bg_color)
 
@@ -242,7 +274,7 @@ class AGVInterface(Node):
                     pass
 
             # Draw planned trajectory
-            if self.path:
+            if self.path and self.show_waypoints:
                 try:
                     points = []
                     for pose in self.path:
@@ -257,7 +289,7 @@ class AGVInterface(Node):
                     pass
 
             # Draw waypoints in trajectory mode
-            if self.mode == 'trajectory' and self.waypoints:
+            if self.mode == 'trajectory' and self.waypoints and self.show_waypoints:
                 try:
                     if len(self.waypoints) > 1:
                         pygame.draw.lines(self.screen, self.trajectory_color, False, self.waypoints, 2)
@@ -329,6 +361,27 @@ class AGVInterface(Node):
             except Exception:
                 pass
 
+            # Draw warning for spawn failure
+            if not self.current_pose:
+                try:
+                    warning_texts = [
+                        "AGV Not Spawned!",
+                        "Check:",
+                        "- URDF syntax: check_urdf agv.urdf",
+                        "- Plugin: libgazebo_ros_ackermann_drive.so",
+                        "- Gazebo logs for errors",
+                        "- File permissions",
+                        "- ROS/Gazebo versions",
+                    ]
+                    warning_surface = pygame.Surface((300, 200), pygame.SRCALPHA)
+                    warning_surface.fill(self.warning_color)
+                    for i, text in enumerate(warning_texts):
+                        text_surface = font.render(text, True, (0, 0, 0))
+                        warning_surface.blit(text_surface, (10, 10 + i * 24))
+                    self.screen.blit(warning_surface, (10, self.screen_height - 210))
+                except Exception:
+                    pass
+
             # Draw help overlay
             if self.show_help:
                 try:
@@ -346,10 +399,17 @@ class AGVInterface(Node):
                         "g: Toggle grid",
                         "h: Toggle help",
                         "a: Center on AGV",
+                        "w: Toggle waypoints",
+                        "k: Save waypoints",
+                        "l: Load waypoints",
                         "Left click: Add waypoint",
                         "Right click: Remove last waypoint",
+                        "Troubleshooting:",
+                        "- Check URDF: check_urdf agv.urdf",
+                        "- Verify plugin: find /opt/ros/humble",
+                        "- Check Gazebo logs",
                     ]
-                    help_surface = pygame.Surface((300, 400), pygame.SRCALPHA)
+                    help_surface = pygame.Surface((300, 500), pygame.SRCALPHA)
                     help_surface.fill((255, 255, 255, 200))
                     for i, text in enumerate(help_texts):
                         text_surface = font.render(text, True, (0, 0, 0))

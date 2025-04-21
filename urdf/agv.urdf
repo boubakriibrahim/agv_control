@@ -17,11 +17,13 @@
     </collision>
     <inertial>
       <mass value="200"/>
-      <inertia ixx="20.0" ixy="0" ixz="0" iyy="20.0" iyz="0" izz="40.0"/>
+      <inertia ixx="20.0" ixy="0.0" ixz="0.0" iyy="20.0" iyz="0.0" izz="40.0"/>
     </inertial>
   </link>
   <gazebo reference="base_link">
     <material>Gazebo/Blue</material>
+    <mu1>0.8</mu1>
+    <mu2>0.8</mu2>
   </gazebo>
 
   <!-- Front left wheel -->
@@ -54,12 +56,14 @@
       </surface>
     </collision>
     <inertial>
-      <mass value="1"/>
-      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.008"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.015"/>
     </inertial>
   </link>
   <gazebo reference="front_left_wheel">
     <material>Gazebo/Black</material>
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
   </gazebo>
 
   <!-- Front right wheel -->
@@ -90,12 +94,14 @@
       </surface>
     </collision>
     <inertial>
-      <mass value="1"/>
-      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.008"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.015"/>
     </inertial>
   </link>
   <gazebo reference="front_right_wheel">
     <material>Gazebo/Black</material>
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
   </gazebo>
 
   <!-- Rear left wheel -->
@@ -126,12 +132,14 @@
       </surface>
     </collision>
     <inertial>
-      <mass value="1"/>
-      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.008"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.015"/>
     </inertial>
   </link>
   <gazebo reference="rear_left_wheel">
     <material>Gazebo/Black</material>
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
   </gazebo>
 
   <!-- Rear right wheel -->
@@ -162,12 +170,14 @@
       </surface>
     </collision>
     <inertial>
-      <mass value="1"/>
-      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.008"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.015"/>
     </inertial>
   </link>
   <gazebo reference="rear_right_wheel">
     <material>Gazebo/Black</material>
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
   </gazebo>
 
   <!-- Joints -->
@@ -177,6 +187,7 @@
     <origin xyz="0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-0.9" upper="0.9"/>
+    <dynamics damping="0.1" friction="0.1"/>
   </joint>
   <joint name="base_to_front_right" type="revolute">
     <parent link="base_link"/>
@@ -184,18 +195,21 @@
     <origin xyz="0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-0.9" upper="0.9"/>
+    <dynamics damping="0.1" friction="0.1"/>
   </joint>
   <joint name="base_to_rear_left" type="continuous">
     <parent link="base_link"/>
     <child link="rear_left_wheel"/>
     <origin xyz="-0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/>
+    <dynamics damping="0.1" friction="0.1"/>
   </joint>
   <joint name="base_to_rear_right" type="continuous">
     <parent link="base_link"/>
     <child link="rear_right_wheel"/>
     <origin xyz="-0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/>
+    <dynamics damping="0.1" friction="0.1"/>
   </joint>
 
   <!-- Gazebo plugins -->
