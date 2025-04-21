@@ -41,9 +41,10 @@ class AGVInterface(Node):
         self.actual_path = []
         self.waypoints = []
         self.mode = 'trajectory'
-        self.scale = 100  # pixels per meter
-        self.view_offset_x = 0  # pixels
+        self.scale = 100
+        self.view_offset_x = 0
         self.view_offset_y = 0
+        self.show_grid = True
 
         # Pygame setup
         pygame.init()
@@ -59,6 +60,7 @@ class AGVInterface(Node):
         self.agv_color = (255, 0, 0)
         self.actual_path_color = (0, 255, 0)
         self.obstacle_color = (100, 100, 100)
+        self.placeholder_color = (150, 150, 150)
         self.point_radius = 5
         self.agv_radius = 10
         self.clock = pygame.time.Clock()
@@ -69,6 +71,7 @@ class AGVInterface(Node):
         self.current_pose = msg.pose.pose
         if self.current_pose:
             self.actual_path.append((self.current_pose.position.x, self.current_pose.position.y))
+            self.get_logger().info('Received valid odom data')
         else:
             self.get_logger().warn('Received invalid odom data')
 
@@ -124,7 +127,7 @@ class AGVInterface(Node):
                         self.publish_trajectory()
                     elif event.key == pygame.K_c:
                         self.waypoints.clear()
-                        self.get_logger().info('Cleared waypoints')
+                        self.get_logger().info(('Cleared waypoints'))
                     elif event.key == pygame.K_t:
                         self.mode = 'trajectory'
                         self.get_logger().info('Switched to trajectory mode')
@@ -150,23 +153,31 @@ class AGVInterface(Node):
                         self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
                         self.get_logger().info(f'Decreased Kd to {self.pid.Kd}')
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
-                        self.scale = min(200, self.scale + 25)
+                        self.scale = min(200, self.scale + 10)
                         self.get_logger().info(f'Zoom in: scale={self.scale}')
                     elif event.key == pygame.K_MINUS:
-                        self.scale = max(25, self.scale - 25)
+                        self.scale = max(25, self.scale - 10)
                         self.get_logger().info(f'Zoom out: scale={self.scale}')
                     elif event.key == pygame.K_LEFT:
-                        self.view_offset_x -= 50
+                        self.view_offset_x = max(-1000, self.view_offset_x - 50)
                         self.get_logger().info(f'Pan left: offset_x={self.view_offset_x}')
                     elif event.key == pygame.K_RIGHT:
-                        self.view_offset_x += 50
+                        self.view_offset_x = min(1000, self.view_offset_x + 50)
                         self.get_logger().info(f'Pan right: offset_x={self.view_offset_x}')
                     elif event.key == pygame.K_UP:
-                        self.view_offset_y -= 50
+                        self.view_offset_y = max(-1000, self.view_offset_y - 50)
                         self.get_logger().info(f'Pan up: offset_y={self.view_offset_y}')
                     elif event.key == pygame.K_DOWN:
-                        self.view_offset_y += 50
+                        self.view_offset_y = min(1000, self.view_offset_y + 50)
                         self.get_logger().info(f'Pan down: offset_y={self.view_offset_y}')
+                    elif event.key == pygame.K_r:
+                        self.scale = 100
+                        self.view_offset_x = 0
+                        self.view_offset_y = 0
+                        self.get_logger().info('Reset view: scale=100, offset=(0,0)')
+                    elif event.key == pygame.K_g:
+                        self.show_grid = not self.show_grid
+                        self.get_logger().info(f'Grid visibility: {self.show_grid}')
 
             self.screen.fill(self.bg_color)
 
@@ -174,20 +185,21 @@ class AGVInterface(Node):
             try:
                 origin_x = self.screen_width / 2 + self.view_offset_x
                 origin_y = self.screen_height / 2 + self.view_offset_y
-                pygame.draw.line(self.screen, self.axis_color, (origin_x, origin_y), (origin_x + 50, origin_y), 2)  # X-axis
-                pygame.draw.line(self.screen, self.axis_color, (origin_x, origin_y), (origin_x, origin_y - 50), 2)  # Y-axis
+                pygame.draw.line(self.screen, self.axis_color, (origin_x, origin_y), (origin_x + 50, origin_y), 2)
+                pygame.draw.line(self.screen, self.axis_color, (origin_x, origin_y), (origin_x, origin_y - 50), 2)
             except Exception as e:
                 self.get_logger().error(f'Axes drawing error: {e}')
 
             # Draw grid
-            try:
-                grid_step = 100
-                for x in range(0, self.screen_width, grid_step):
-                    pygame.draw.line(self.screen, self.grid_color, (x, 0), (x, self.screen_height), 1)
-                for y in range(0, self.screen_height, grid_step):
-                    pygame.draw.line(self.screen, self.grid_color, (0, y), (self.screen_width, y), 1)
-            except Exception as e:
-                self.get_logger().error(f'Grid drawing error: {e}')
+            if self.show_grid:
+                try:
+                    grid_step = 100
+                    for x in range(0, self.screen_width, grid_step):
+                        pygame.draw.line(self.screen, self.grid_color, (x, 0), (x, self.screen_height), 1)
+                    for y in range(0, self.screen_height, grid_step):
+                        pygame.draw.line(self.screen, self.grid_color, (0, y), (self.screen_width, y), 1)
+                except Exception as e:
+                    self.get_logger().error(f'Grid drawing error: {e}')
 
             # Draw obstacles
             if self.map_data:
@@ -255,7 +267,6 @@ class AGVInterface(Node):
                     agv_y = self.current_pose.position.y * self.scale + self.screen_height / 2 + self.view_offset_y
                     if 0 <= agv_x < self.screen_width and 0 <= agv_y < self.screen_height:
                         pygame.draw.circle(self.screen, self.agv_color, (agv_x, agv_y), self.agv_radius)
-                        # Draw orientation arrow
                         yaw = self.get_yaw(self.current_pose.orientation)
                         arrow_length = self.agv_radius * 2
                         arrow_end_x = agv_x + arrow_length * cos(yaw)
@@ -264,7 +275,13 @@ class AGVInterface(Node):
                 except Exception as e:
                     self.get_logger().error(f'AGV drawing error: {e}')
             else:
-                self.get_logger().warn('No valid AGV pose for rendering')
+                try:
+                    # Placeholder AGV at origin
+                    placeholder_x = self.screen_width / 2 + self.view_offset_x
+                    placeholder_y = self.screen_height / 2 + self.view_offset_y
+                    pygame.draw.circle(self.screen, self.placeholder_color, (placeholder_x, placeholder_y), self.agv_radius, 2)
+                except Exception as e:
+                    self.get_logger().error(f'Placeholder AGV drawing error: {e}')
 
             # Draw labels and status
             try:
@@ -275,11 +292,11 @@ class AGVInterface(Node):
                     f'Scale: {self.scale} px/m',
                     f'Waypoint: {self.current_waypoint_index}/{len(self.path) if self.path else 0}',
                     f'Pose: ({self.current_pose.position.x:.2f}, {self.current_pose.position.y:.2f})' if self.current_pose else 'Pose: N/A',
+                    f'AGV: {"Spawned" if self.current_pose else "Not Spawned"}',
                 ]
                 for i, text in enumerate(texts):
                     text_surface = font.render(text, True, (0, 0, 0))
                     self.screen.blit(text_surface, (10, 10 + i * 30))
-                # Draw scale indicator (1m line)
                 scale_line_start = (self.screen_width - 110, self.screen_height - 20)
                 scale_line_end = (self.screen_width - 110 + self.scale, self.screen_height - 20)
                 pygame.draw.line(self.screen, (0, 0, 0), scale_line_start, scale_line_end, 2)

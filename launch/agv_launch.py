@@ -3,14 +3,13 @@ from launch_ros.actions import Node
 from launch.actions import ExecuteProcess, LogInfo
 from ament_index_python.packages import get_package_share_directory
 import os
-import time
 
 def generate_launch_description():
     pkg_share = get_package_share_directory('agv_control')
     urdf_file = os.path.join(pkg_share, 'urdf', 'agv.urdf')
     world_file = os.path.join(pkg_share, 'worlds', 'agv_world.world')
 
-    # Verify URDF exists
+    # Verify files exist
     if not os.path.exists(urdf_file):
         raise FileNotFoundError(f'URDF file not found: {urdf_file}')
     if not os.path.exists(world_file):
@@ -24,7 +23,7 @@ def generate_launch_description():
         ),
         LogInfo(msg='Waiting for Gazebo to start...'),
         ExecuteProcess(
-            cmd=['sleep', '5'],  # Delay to ensure Gazebo is ready
+            cmd=['sleep', '10'],
             output='screen'
         ),
         LogInfo(msg=f'Spawning AGV with URDF: {urdf_file}'),
@@ -39,12 +38,6 @@ def generate_launch_description():
             package='gazebo_ros',
             executable='spawn_entity.py',
             arguments=['-entity', 'agv', '-file', urdf_file, '-x', '0', '-y', '0', '-z', '0.3'],
-            output='screen'
-        ),
-        LogInfo(msg='Publishing initial /cmd_vel'),
-        ExecuteProcess(
-            cmd=['ros2', 'topic', 'pub', '--once', '/cmd_vel', 'geometry_msgs/Twist',
-                 '{linear: {x: 0.1}, angular: {z: 0.0}}'],
             output='screen'
         ),
     ])
