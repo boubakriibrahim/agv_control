@@ -16,14 +16,14 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="200"/>
-      <inertia ixx="20.0" ixy="0.0" ixz="0.0" iyy="20.0" iyz="0.0" izz="40.0"/>
+      <mass value="100"/> <!-- Reduced for stability -->
+      <inertia ixx="10.0" ixy="0.0" ixz="0.0" iyy="10.0" iyz="0.0" izz="20.0"/>
     </inertial>
   </link>
   <gazebo reference="base_link">
     <material>Gazebo/Blue</material>
-    <mu1>0.8</mu1>
-    <mu2>0.8</mu2>
+    <mu1>0.5</mu1> <!-- Reduced friction -->
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Front left wheel -->
@@ -43,27 +43,27 @@
       <surface>
         <friction>
           <ode>
-            <mu>1.0</mu>
-            <mu2>1.0</mu2>
+            <mu>0.5</mu> <!-- Reduced friction -->
+            <mu2>0.5</mu2>
           </ode>
         </friction>
         <contact>
           <ode>
-            <kp>1000000.0</kp>
-            <kd>100.0</kd>
+            <kp>2000000.0</kp> <!-- Increased for stability -->
+            <kd>200.0</kd>
           </ode>
         </contact>
       </surface>
     </collision>
     <inertial>
-      <mass value="1.0"/>
-      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.015"/>
+      <mass value="0.5"/> <!-- Reduced for stability -->
+      <inertia ixx="0.004" ixy="0.0" ixz="0.0" iyy="0.004" iyz="0.0" izz="0.008"/>
     </inertial>
   </link>
   <gazebo reference="front_left_wheel">
     <material>Gazebo/Black</material>
-    <mu1>1.0</mu1>
-    <mu2>1.0</mu2>
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Front right wheel -->
@@ -81,27 +81,27 @@
       <surface>
         <friction>
           <ode>
-            <mu>1.0</mu>
-            <mu2>1.0</mu2>
+            <mu>0.5</mu>
+            <mu2>0.5</mu2>
           </ode>
         </friction>
         <contact>
           <ode>
-            <kp>1000000.0</kp>
-            <kd>100.0</kd>
+            <kp>2000000.0</kp>
+            <kd>200.0</kd>
           </ode>
         </contact>
       </surface>
     </collision>
     <inertial>
-      <mass value="1.0"/>
-      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.015"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.004" ixy="0.0" ixz="0.0" iyy="0.004" iyz="0.0" izz="0.008"/>
     </inertial>
   </link>
   <gazebo reference="front_right_wheel">
     <material>Gazebo/Black</material>
-    <mu1>1.0</mu1>
-    <mu2>1.0</mu2>
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Rear left wheel -->
@@ -119,27 +119,27 @@
       <surface>
         <friction>
           <ode>
-            <mu>1.0</mu>
-            <mu2>1.0</mu2>
+            <mu>0.5</mu>
+            <mu2>0.5</mu2>
           </ode>
         </friction>
         <contact>
           <ode>
-            <kp>1000000.0</kp>
-            <kd>100.0</kd>
+            <kp>2000000.0</kp>
+            <kd>200.0</kd>
           </ode>
         </contact>
       </surface>
     </collision>
     <inertial>
-      <mass value="1.0"/>
-      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.015"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.004" ixy="0.0" ixz="0.0" iyy="0.004" iyz="0.0" izz="0.008"/>
     </inertial>
   </link>
   <gazebo reference="rear_left_wheel">
     <material>Gazebo/Black</material>
-    <mu1>1.0</mu1>
-    <mu2>1.0</mu2>
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Rear right wheel -->
@@ -157,27 +157,27 @@
       <surface>
         <friction>
           <ode>
-            <mu>1.0</mu>
-            <mu2>1.0</mu2>
+            <mu>0.5</mu>
+            <mu2>0.5</mu2>
           </ode>
         </friction>
         <contact>
           <ode>
-            <kp>1000000.0</kp>
-            <kd>100.0</kd>
+            <kp>2000000.0</kp>
+            <kd>200.0</kd>
           </ode>
         </contact>
       </surface>
     </collision>
     <inertial>
-      <mass value="1.0"/>
-      <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.015"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.004" ixy="0.0" ixz="0.0" iyy="0.004" iyz="0.0" izz="0.008"/>
     </inertial>
   </link>
   <gazebo reference="rear_right_wheel">
     <material>Gazebo/Black</material>
-    <mu1>1.0</mu1>
-    <mu2>1.0</mu2>
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Joints -->
@@ -186,32 +186,32 @@
     <child link="front_left_wheel"/>
     <origin xyz="0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Caster wheel, free rotation -->
-    <limit effort="100" velocity="20"/> <!-- Increased velocity limit -->
-    <dynamics damping="0.1" friction="0.1"/>
+    <limit effort="100" velocity="50"/> <!-- Increased velocity -->
+    <dynamics damping="1.0" friction="0.5"/> <!-- Increased damping -->
   </joint>
   <joint name="base_to_front_right" type="continuous">
     <parent link="base_link"/>
     <child link="front_right_wheel"/>
     <origin xyz="0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Caster wheel, free rotation -->
-    <limit effort="100" velocity="20"/> <!-- Increased velocity limit -->
-    <dynamics damping="0.1" friction="0.1"/>
+    <limit effort="100" velocity="50"/>
+    <dynamics damping="1.0" friction="0.5"/>
   </joint>
   <joint name="base_to_rear_left" type="continuous">
     <parent link="base_link"/>
     <child link="rear_left_wheel"/>
     <origin xyz="-0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Drive axis -->
-    <limit effort="200" velocity="20"/> <!-- Increased effort and velocity -->
-    <dynamics damping="0.1" friction="0.1"/>
+    <limit effort="500" velocity="50"/> <!-- Increased for high speed -->
+    <dynamics damping="1.0" friction="0.5"/>
   </joint>
   <joint name="base_to_rear_right" type="continuous">
     <parent link="base_link"/>
     <child link="rear_right_wheel"/>
     <origin xyz="-0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Drive axis -->
-    <limit effort="200" velocity="20"/> <!-- Increased effort and velocity -->
-    <dynamics damping="0.1" friction="0.1"/>
+    <limit effort="500" velocity="50"/>
+    <dynamics damping="1.0" friction="0.5"/>
   </joint>
 
   <!-- Gazebo plugins -->
@@ -231,11 +231,11 @@
       <publish_wheel_tf>false</publish_wheel_tf>
       <left_joint>base_to_rear_left</left_joint>
       <right_joint>base_to_rear_right</right_joint>
-      <wheel_separation>0.9</wheel_separation> <!-- Distance between rear wheels -->
+      <wheel_separation>0.9</wheel_separation>
       <wheel_diameter>0.3</wheel_diameter>
-      <max_wheel_torque>200.0</max_wheel_torque> <!-- Increased for higher speed -->
-      <max_wheel_acceleration>20.0</max_wheel_acceleration> <!-- Increased for faster acceleration -->
-      <update_rate>100.0</update_rate>
+      <max_wheel_torque>500.0</max_wheel_torque> <!-- Increased for high speed -->
+      <max_wheel_acceleration>50.0</max_wheel_acceleration> <!-- Increased for high speed -->
+      <update_rate>200.0</update_rate> <!-- Increased for stability -->
     </plugin>
   </gazebo>
 </robot>

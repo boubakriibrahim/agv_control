@@ -33,17 +33,17 @@ class AGVInterface(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
         self.map_sub = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
-        self.timer = self.create_timer(0.1, self.control_loop)
+        self.timer = self.create_timer(0.05, self.control_loop)  # Increased update rate
 
         self.path = None
         self.current_waypoint_index = 0
         self.current_pose = None
         self.map_data = None
-        self.pid = PID(Kp=1.5, Ki=0.01, Kd=0.3)
-        self.linear_velocity = 1.0  # Increased default speed
-        self.max_velocity = 3.0  # Max speed limit
-        self.min_velocity = 0.1  # Min speed limit
-        self.waypoint_threshold = 0.2
+        self.pid = PID(Kp=2.0, Ki=0.0, Kd=0.5)  # Tuned for better tracking
+        self.linear_velocity = 10.0  # 10x default speed
+        self.min_velocity = 0.1  # Minimum speed
+        self.waypoint_threshold = 0.3  # Increased for high speeds
+        self.lookahead_distance = 0.5  # Smooth path tracking
         self.actual_path = []
         self.waypoints = []
         self.mode = 'trajectory'
@@ -56,12 +56,12 @@ class AGVInterface(Node):
         self.blink_state = True
         self.last_blink_time = time.time()
         self.last_odom_time = None
-        self.odom_timeout = 5.0  # seconds
+        self.odom_timeout = 5.0
 
         # Pygame setup
         pygame.init()
-        self.screen_width = 1200  # Increased window size
-        self.screen_height = 800  # Increased window size
+        self.screen_width = 1200
+        self.screen_height = 800
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
         pygame.display.set_caption('AGV Interface')
         self.bg_color = (255, 255, 255)
@@ -204,11 +204,11 @@ class AGVInterface(Node):
                     elif event.key == pygame.K_d and pygame.key.get_mods() & pygame.KMOD_SHIFT:
                         self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
                         self.get_logger().info(f'Decreased Kd to {self.pid.Kd}')
-                    elif event.key == pygame.K_u:  # Increase speed
-                        self.linear_velocity = min(self.max_velocity, self.linear_velocity + 0.1)
+                    elif event.key == pygame.K_u:  # Increase speed by 1.0 m/s
+                        self.linear_velocity += 1.0
                         self.get_logger().info(f'Increased speed to {self.linear_velocity:.2f} m/s')
-                    elif event.key == pygame.K_j:  # Decrease speed
-                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.1)
+                    elif event.key == pygame.K_j:  # Decrease speed by 1.0 m/s
+                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 1.0)
                         self.get_logger().info(f'Decreased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
                         self.scale = min(200, self.scale + 10)
@@ -365,7 +365,7 @@ class AGVInterface(Node):
                 texts = [
                     f'Mode: {self.mode.capitalize()}',
                     f'Kp={self.pid.Kp:.2f} Ki={self.pid.Ki:.3f} Kd={self.pid.Kd:.2f}',
-                    f'Speed: {self.linear_velocity:.2f} m/s',  # Added speed display
+                    f'Speed: {self.linear_velocity:.2f} m/s',
                     f'Scale: {self.scale} px/m',
                     f'Waypoint: {self.current_waypoint_index}/{len(self.path) if self.path else 0}',
                     f'Pose: ({self.current_pose.position.x:.2f}, {self.current_pose.position.y:.2f})' if self.current_pose else 'Pose: N/A',
@@ -418,8 +418,8 @@ class AGVInterface(Node):
                         "c: Clear waypoints",
                         "p/i/d: Increase PID gains",
                         "Shift+p/i/d: Decrease PID gains",
-                        "u: Increase speed (+0.1 m/s)",  # Added
-                        "j: Decrease speed (-0.1 m/s)",  # Added
+                        "u: Increase speed (+1.0 m/s)",
+                        "j: Decrease speed (-1.0 m/s)",
                         "+/-: Zoom in/out",
                         "Arrows: Pan view",
                         "r: Reset view",
@@ -446,7 +446,7 @@ class AGVInterface(Node):
                     pass
 
             pygame.display.flip()
-            self.clock.tick(30)
+            self.clock.tick(50)  # Increased tick rate for smoother control
 
             if self.path is None or self.current_pose is None:
                 self.get_logger().warn('Waiting for path or pose data')
@@ -464,6 +464,7 @@ class AGVInterface(Node):
             target_x = target_pose.position.x
             target_y = target_pose.position.y
 
+            # Compute distance to waypoint
             distance = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
             if distance < self.waypoint_threshold:
                 self.current_waypoint_index += 1
@@ -471,20 +472,32 @@ class AGVInterface(Node):
                     self.get_logger().info(f'Reached waypoint {self.current_waypoint_index - 1}')
                 return
 
+            # Lookahead point adjustment
+            if distance > self.lookahead_distance:
+                target_x = current_x + self.lookahead_distance * cos(atan2(target_y - current_y, target_x - current_x))
+                target_y = current_y + self.lookahead_distance * sin(atan2(target_y - current_y, target_x - current_x))
+
+            # Compute heading error
             desired_heading = atan2(target_y - current_y, target_x - current_x)
             current_heading = self.get_yaw(self.current_pose.orientation)
             error = desired_heading - current_heading
-            error = (error + pi) % (2 * pi) - pi
+            error = (error + pi) % (2 * pi) - pi  # Normalize to [-pi, pi]
 
-            dt = 0.1
+            # Scale velocity based on distance to prevent overshooting
+            velocity_scale = min(1.0, distance / self.lookahead_distance)
+            scaled_velocity = self.linear_velocity * velocity_scale
+
+            # PID control
+            dt = 0.05  # Match timer rate
             steering_angle = self.pid.compute(error, dt)
-            steering_angle = max(min(steering_angle, 0.9), -0.9)
+            steering_angle = max(min(steering_angle, 0.9), -0.9)  # Limit steering angle
 
+            # Publish velocity command
             twist = Twist()
-            twist.linear.x = self.linear_velocity
+            twist.linear.x = scaled_velocity
             twist.angular.z = steering_angle
             self.cmd_vel_pub.publish(twist)
-            self.get_logger().debug(f'Steering: {steering_angle:.2f}, Velocity: {self.linear_velocity:.2f}')
+            self.get_logger().debug(f'Distance: {distance:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {scaled_velocity:.2f}m/s')
 
         except Exception as e:
             self.get_logger().error(f'Control loop error: {e}')
