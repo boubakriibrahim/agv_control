@@ -40,7 +40,7 @@ class AGVInterface(Node):
         self.waypoint_threshold = 0.2
         self.actual_path = []
         self.waypoints = []
-        self.mode = 'trajectory'  # 'trajectory' or 'view'
+        self.mode = 'trajectory'
 
         # Pygame setup
         pygame.init()
@@ -115,22 +115,22 @@ class AGVInterface(Node):
                 elif event.key == pygame.K_v:
                     self.mode = 'view'
                     self.get_logger().info('Switched to view mode')
-                elif event.key == pygame.K_p:
+                elif event.key == pygame.K_p:  # Fixed: lowercase
                     self.pid.Kp += 0.1
                     self.get_logger().info(f'Increased Kp to {self.pid.Kp}')
-                elif event.key == pygame.K_P:
+                elif event.key == pygame.K_p and pygame.key.get_mods() & pygame.KMOD_SHIFT:  # Shift+p
                     self.pid.Kp = max(0.1, self.pid.Kp - 0.1)
                     self.get_logger().info(f'Decreased Kp to {self.pid.Kp}')
-                elif event.key == pygame.K_i:
+                elif event.key == pygame.K_i:  # Fixed: lowercase
                     self.pid.Ki += 0.001
                     self.get_logger().info(f'Increased Ki to {self.pid.Ki}')
-                elif event.key == pygame.K_I:
+                elif event.key == pygame.K_i and pygame.key.get_mods() & pygame.KMOD_SHIFT:  # Shift+i
                     self.pid.Ki = max(0.0, self.pid.Ki - 0.001)
                     self.get_logger().info(f'Decreased Ki to {self.pid.Ki}')
-                elif event.key == pygame.K_d:
+                elif event.key == pygame.K_d:  # Fixed: lowercase
                     self.pid.Kd += 0.05
                     self.get_logger().info(f'Increased Kd to {self.pid.Kd}')
-                elif event.key == pygame.K_D:
+                elif event.key == pygame.K_d and pygame.key.get_mods() & pygame.KMOD_SHIFT:  # Shift+d
                     self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
                     self.get_logger().info(f'Decreased Kd to {self.pid.Kd}')
 
@@ -164,12 +164,13 @@ class AGVInterface(Node):
 
         dt = 0.1
         steering_angle = self.pid.compute(error, dt)
-        steering_angle = max(min(steering_angle, pi/4), -pi/4)  # Limit steering
+        steering_angle = max(min(steering_angle, 0.7854), -0.7854)  # Match max_steering_angle
 
         twist = Twist()
         twist.linear.x = self.linear_velocity
-        twist.angular.z = (self.linear_velocity * np.tan(steering_angle)) / 1.5  # L=1.5m
+        twist.angular.z = steering_angle  # Ackermann plugin expects steering angle
         self.cmd_vel_pub.publish(twist)
+        self.get_logger().debug(f'Steering: {steering_angle:.2f}, Velocity: {self.linear_velocity:.2f}')
 
         self.screen.fill(self.bg_color)
 
