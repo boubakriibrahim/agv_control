@@ -17,9 +17,12 @@
     </collision>
     <inertial>
       <mass value="200"/>
-      <inertia ixx="120" ixy="0" ixz="0" iyy="120" iyz="0" izz="120"/>
+      <inertia ixx="20.0" ixy="0" ixz="0" iyy="20.0" iyz="0" izz="40.0"/>
     </inertial>
   </link>
+  <gazebo reference="base_link">
+    <material>Gazebo/Blue</material>
+  </gazebo>
 
   <!-- Front left wheel -->
   <link name="front_left_wheel">
@@ -42,13 +45,22 @@
             <mu2>1.0</mu2>
           </ode>
         </friction>
+        <contact>
+          <ode>
+            <kp>1000000.0</kp>
+            <kd>100.0</kd>
+          </ode>
+        </contact>
       </surface>
     </collision>
     <inertial>
       <mass value="1"/>
-      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.008"/>
     </inertial>
   </link>
+  <gazebo reference="front_left_wheel">
+    <material>Gazebo/Black</material>
+  </gazebo>
 
   <!-- Front right wheel -->
   <link name="front_right_wheel">
@@ -69,13 +81,22 @@
             <mu2>1.0</mu2>
           </ode>
         </friction>
+        <contact>
+          <ode>
+            <kp>1000000.0</kp>
+            <kd>100.0</kd>
+          </ode>
+        </contact>
       </surface>
     </collision>
     <inertial>
       <mass value="1"/>
-      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.008"/>
     </inertial>
   </link>
+  <gazebo reference="front_right_wheel">
+    <material>Gazebo/Black</material>
+  </gazebo>
 
   <!-- Rear left wheel -->
   <link name="rear_left_wheel">
@@ -96,13 +117,22 @@
             <mu2>1.0</mu2>
           </ode>
         </friction>
+        <contact>
+          <ode>
+            <kp>1000000.0</kp>
+            <kd>100.0</kd>
+          </ode>
+        </contact>
       </surface>
     </collision>
     <inertial>
       <mass value="1"/>
-      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.008"/>
     </inertial>
   </link>
+  <gazebo reference="rear_left_wheel">
+    <material>Gazebo/Black</material>
+  </gazebo>
 
   <!-- Rear right wheel -->
   <link name="rear_right_wheel">
@@ -123,13 +153,22 @@
             <mu2>1.0</mu2>
           </ode>
         </friction>
+        <contact>
+          <ode>
+            <kp>1000000.0</kp>
+            <kd>100.0</kd>
+          </ode>
+        </contact>
       </surface>
     </collision>
     <inertial>
       <mass value="1"/>
-      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.008"/>
     </inertial>
   </link>
+  <gazebo reference="rear_right_wheel">
+    <material>Gazebo/Black</material>
+  </gazebo>
 
   <!-- Joints -->
   <joint name="base_to_front_left" type="revolute">

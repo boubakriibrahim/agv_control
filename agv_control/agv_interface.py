@@ -6,6 +6,7 @@ from math import atan2, sqrt, pi, cos, sin
 import pygame
 import sys
 import numpy as np
+import time
 
 class PID:
     def __init__(self, Kp, Ki, Kd):
@@ -45,6 +46,9 @@ class AGVInterface(Node):
         self.view_offset_x = 0
         self.view_offset_y = 0
         self.show_grid = True
+        self.show_help = False
+        self.blink_state = True
+        self.last_blink_time = time.time()
 
         # Pygame setup
         pygame.init()
@@ -61,6 +65,7 @@ class AGVInterface(Node):
         self.actual_path_color = (0, 255, 0)
         self.obstacle_color = (100, 100, 100)
         self.placeholder_color = (150, 150, 150)
+        self.text_bg_color = (255, 255, 255, 180)
         self.point_radius = 5
         self.agv_radius = 10
         self.clock = pygame.time.Clock()
@@ -112,6 +117,12 @@ class AGVInterface(Node):
 
     def control_loop(self):
         try:
+            # Update blink state
+            current_time = time.time()
+            if current_time - self.last_blink_time > 0.5:
+                self.blink_state = not self.blink_state
+                self.last_blink_time = current_time
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
@@ -122,12 +133,15 @@ class AGVInterface(Node):
                         x, y = event.pos
                         self.waypoints.append((x, y))
                         self.get_logger().info(f'Added waypoint at ({x}, {y})')
+                    elif event.button == 3 and self.waypoints:
+                        self.waypoints.pop()
+                        self.get_logger().info('Removed last waypoint')
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_s and self.mode == 'trajectory':
                         self.publish_trajectory()
                     elif event.key == pygame.K_c:
                         self.waypoints.clear()
-                        self.get_logger().info(('Cleared waypoints'))
+                        self.get_logger().info('Cleared waypoints')
                     elif event.key == pygame.K_t:
                         self.mode = 'trajectory'
                         self.get_logger().info('Switched to trajectory mode')
@@ -159,16 +173,16 @@ class AGVInterface(Node):
                         self.scale = max(25, self.scale - 10)
                         self.get_logger().info(f'Zoom out: scale={self.scale}')
                     elif event.key == pygame.K_LEFT:
-                        self.view_offset_x = max(-1000, self.view_offset_x - 50)
+                        self.view_offset_x = max(-1000, self.view_offset_x - 25)
                         self.get_logger().info(f'Pan left: offset_x={self.view_offset_x}')
                     elif event.key == pygame.K_RIGHT:
-                        self.view_offset_x = min(1000, self.view_offset_x + 50)
+                        self.view_offset_x = min(1000, self.view_offset_x + 25)
                         self.get_logger().info(f'Pan right: offset_x={self.view_offset_x}')
                     elif event.key == pygame.K_UP:
-                        self.view_offset_y = max(-1000, self.view_offset_y - 50)
+                        self.view_offset_y = max(-1000, self.view_offset_y - 25)
                         self.get_logger().info(f'Pan up: offset_y={self.view_offset_y}')
                     elif event.key == pygame.K_DOWN:
-                        self.view_offset_y = min(1000, self.view_offset_y + 50)
+                        self.view_offset_y = min(1000, self.view_offset_y + 25)
                         self.get_logger().info(f'Pan down: offset_y={self.view_offset_y}')
                     elif event.key == pygame.K_r:
                         self.scale = 100
@@ -178,6 +192,13 @@ class AGVInterface(Node):
                     elif event.key == pygame.K_g:
                         self.show_grid = not self.show_grid
                         self.get_logger().info(f'Grid visibility: {self.show_grid}')
+                    elif event.key == pygame.K_h:
+                        self.show_help = not self.show_help
+                        self.get_logger().info(f'Help overlay: {self.show_help}')
+                    elif event.key == pygame.K_a and self.current_pose:
+                        self.view_offset_x = -self.current_pose.position.x * self.scale
+                        self.view_offset_y = -self.current_pose.position.y * self.scale
+                        self.get_logger().info(f'Centered view on AGV: offset=({self.view_offset_x}, {self.view_offset_y})')
 
             self.screen.fill(self.bg_color)
 
@@ -187,8 +208,8 @@ class AGVInterface(Node):
                 origin_y = self.screen_height / 2 + self.view_offset_y
                 pygame.draw.line(self.screen, self.axis_color, (origin_x, origin_y), (origin_x + 50, origin_y), 2)
                 pygame.draw.line(self.screen, self.axis_color, (origin_x, origin_y), (origin_x, origin_y - 50), 2)
-            except Exception as e:
-                self.get_logger().error(f'Axes drawing error: {e}')
+            except Exception:
+                pass
 
             # Draw grid
             if self.show_grid:
@@ -198,8 +219,8 @@ class AGVInterface(Node):
                         pygame.draw.line(self.screen, self.grid_color, (x, 0), (x, self.screen_height), 1)
                     for y in range(0, self.screen_height, grid_step):
                         pygame.draw.line(self.screen, self.grid_color, (0, y), (self.screen_width, y), 1)
-                except Exception as e:
-                    self.get_logger().error(f'Grid drawing error: {e}')
+                except Exception:
+                    pass
 
             # Draw obstacles
             if self.map_data:
@@ -217,8 +238,8 @@ class AGVInterface(Node):
                                 size = resolution * self.scale
                                 if 0 <= x < self.screen_width and 0 <= y < self.screen_height:
                                     pygame.draw.rect(self.screen, self.obstacle_color, (x, y, size, size))
-                except Exception as e:
-                    self.get_logger().error(f'Obstacle drawing error: {e}')
+                except Exception:
+                    pass
 
             # Draw planned trajectory
             if self.path:
@@ -232,8 +253,8 @@ class AGVInterface(Node):
                             pygame.draw.circle(self.screen, self.waypoint_color, (x, y), self.point_radius)
                     if len(points) > 1:
                         pygame.draw.lines(self.screen, self.trajectory_color, False, points, 2)
-                except Exception as e:
-                    self.get_logger().error(f'Trajectory drawing error: {e}')
+                except Exception:
+                    pass
 
             # Draw waypoints in trajectory mode
             if self.mode == 'trajectory' and self.waypoints:
@@ -243,8 +264,8 @@ class AGVInterface(Node):
                     for point in self.waypoints:
                         if 0 <= point[0] < self.screen_width and 0 <= point[1] < self.screen_height:
                             pygame.draw.circle(self.screen, self.waypoint_color, point, self.point_radius)
-                except Exception as e:
-                    self.get_logger().error(f'Waypoint drawing error: {e}')
+                except Exception:
+                    pass
 
             # Draw actual path
             if len(self.actual_path) > 1:
@@ -257,8 +278,8 @@ class AGVInterface(Node):
                             actual_points.append((px, py))
                     if len(actual_points) > 1:
                         pygame.draw.lines(self.screen, self.actual_path_color, False, actual_points, 1)
-                except Exception as e:
-                    self.get_logger().error(f'Actual path drawing error: {e}')
+                except Exception:
+                    pass
 
             # Draw AGV
             if self.current_pose:
@@ -272,16 +293,16 @@ class AGVInterface(Node):
                         arrow_end_x = agv_x + arrow_length * cos(yaw)
                         arrow_end_y = agv_y - arrow_length * sin(yaw)
                         pygame.draw.line(self.screen, self.agv_color, (agv_x, agv_y), (arrow_end_x, arrow_end_y), 3)
-                except Exception as e:
-                    self.get_logger().error(f'AGV drawing error: {e}')
+                except Exception:
+                    pass
             else:
                 try:
-                    # Placeholder AGV at origin
                     placeholder_x = self.screen_width / 2 + self.view_offset_x
                     placeholder_y = self.screen_height / 2 + self.view_offset_y
-                    pygame.draw.circle(self.screen, self.placeholder_color, (placeholder_x, placeholder_y), self.agv_radius, 2)
-                except Exception as e:
-                    self.get_logger().error(f'Placeholder AGV drawing error: {e}')
+                    if self.blink_state:
+                        pygame.draw.circle(self.screen, self.placeholder_color, (placeholder_x, placeholder_y), self.agv_radius, 2)
+                except Exception:
+                    pass
 
             # Draw labels and status
             try:
@@ -294,16 +315,48 @@ class AGVInterface(Node):
                     f'Pose: ({self.current_pose.position.x:.2f}, {self.current_pose.position.y:.2f})' if self.current_pose else 'Pose: N/A',
                     f'AGV: {"Spawned" if self.current_pose else "Not Spawned"}',
                 ]
-                for i, text in enumerate(texts):
+                text_y = 10
+                for text in texts:
                     text_surface = font.render(text, True, (0, 0, 0))
-                    self.screen.blit(text_surface, (10, 10 + i * 30))
+                    pygame.draw.rect(self.screen, self.text_bg_color, (5, text_y - 2, text_surface.get_width() + 10, text_surface.get_height() + 4), border_radius=3)
+                    self.screen.blit(text_surface, (10, text_y))
+                    text_y += 30
                 scale_line_start = (self.screen_width - 110, self.screen_height - 20)
                 scale_line_end = (self.screen_width - 110 + self.scale, self.screen_height - 20)
                 pygame.draw.line(self.screen, (0, 0, 0), scale_line_start, scale_line_end, 2)
                 scale_text = font.render('1m', True, (0, 0, 0))
                 self.screen.blit(scale_text, (self.screen_width - 110, self.screen_height - 40))
-            except Exception as e:
-                self.get_logger().error(f'Label drawing error: {e}')
+            except Exception:
+                pass
+
+            # Draw help overlay
+            if self.show_help:
+                try:
+                    help_texts = [
+                        "Controls:",
+                        "t: Trajectory mode",
+                        "v: View mode",
+                        "s: Send trajectory",
+                        "c: Clear waypoints",
+                        "p/i/d: Increase PID gains",
+                        "Shift+p/i/d: Decrease PID gains",
+                        "+/-: Zoom in/out",
+                        "Arrows: Pan view",
+                        "r: Reset view",
+                        "g: Toggle grid",
+                        "h: Toggle help",
+                        "a: Center on AGV",
+                        "Left click: Add waypoint",
+                        "Right click: Remove last waypoint",
+                    ]
+                    help_surface = pygame.Surface((300, 400), pygame.SRCALPHA)
+                    help_surface.fill((255, 255, 255, 200))
+                    for i, text in enumerate(help_texts):
+                        text_surface = font.render(text, True, (0, 0, 0))
+                        help_surface.blit(text_surface, (10, 10 + i * 24))
+                    self.screen.blit(help_surface, (self.screen_width - 310, 10))
+                except Exception:
+                    pass
 
             pygame.display.flip()
             self.clock.tick(30)
@@ -355,8 +408,7 @@ class AGVInterface(Node):
             cosy_cosp = 1 - 2 * (q.y**2 + q.z**2)
             yaw = atan2(siny_cosp, cosy_cosp)
             return yaw
-        except Exception as e:
-            self.get_logger().error(f'Yaw calculation error: {e}')
+        except Exception:
             return 0.0
 
 def main(args=None):

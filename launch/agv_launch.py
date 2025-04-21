@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess, LogInfo
+from launch.actions import ExecuteProcess, LogInfo, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
 from ament_index_python.packages import get_package_share_directory
 import os
 
@@ -15,6 +16,21 @@ def generate_launch_description():
     if not os.path.exists(world_file):
         raise FileNotFoundError(f'World file not found: {world_file}')
 
+    # Spawn node with retry
+    def spawn_agv(attempt=1, max_attempts=3):
+        return Node(
+            package='gazebo_ros',
+            executable='spawn_entity.py',
+            arguments=['-entity', 'agv', '-file', urdf_file, '-x', '0', '-y', '0', '-z', '0.3'],
+            output='screen',
+            name=f'spawn_agv_attempt_{attempt}',
+            on_exit=[
+                LogInfo(msg=f'Spawn attempt {attempt} failed'),
+                spawn_agv(attempt + 1, max_attempts) if attempt < max_attempts else
+                LogInfo(msg='All spawn attempts failed')
+            ]
+        )
+
     return LaunchDescription([
         LogInfo(msg=f'Loading world: {world_file}'),
         ExecuteProcess(
@@ -23,21 +39,20 @@ def generate_launch_description():
         ),
         LogInfo(msg='Waiting for Gazebo to start...'),
         ExecuteProcess(
-            cmd=['sleep', '10'],
+            cmd=['sleep', '15'],
             output='screen'
         ),
-        LogInfo(msg=f'Spawning AGV with URDF: {urdf_file}'),
+        LogInfo(msg=f'Publishing robot description: {urdf_file}'),
         Node(
             package='robot_state_publisher',
             executable='robot_state_publisher',
             name='robot_state_publisher',
             output='screen',
-            parameters=[{'robot_description': open(urdf_file).read()}]
+            parameters=[{
+                'robot_description': open(urdf_file).read(),
+                'publish_robot_description': True
+            }]
         ),
-        Node(
-            package='gazebo_ros',
-            executable='spawn_entity.py',
-            arguments=['-entity', 'agv', '-file', urdf_file, '-x', '0', '-y', '0', '-z', '0.3'],
-            output='screen'
-        ),
+        LogInfo(msg='Attempting to spawn AGV...'),
+        spawn_agv()
     ])
