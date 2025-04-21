@@ -7,6 +7,7 @@ import os
 import subprocess
 
 def generate_launch_description():
+    # Get package share directory
     pkg = get_package_share_directory('agv_control')
     world = os.path.join(pkg, 'worlds', 'agv_world.world')
     urdf = os.path.join(pkg, 'urdf', 'agv.urdf')
@@ -19,8 +20,8 @@ def generate_launch_description():
 
     # Validate URDF
     try:
-        subprocess.run(['check_urdf', urdf], check=True, capture_output=True, text=True)
-        LogInfo(msg='URDF validation passed')
+        result = subprocess.run(['check_urdf', urdf], check=True, capture_output=True, text=True)
+        LogInfo(msg=f'URDF validation passed: {result.stdout}')
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f'URDF validation failed: {e.stderr}')
 
@@ -34,7 +35,7 @@ def generate_launch_description():
         launch_arguments={'world': world, 'verbose': 'true'}.items()
     )
 
-    # Publish robot_state_publisher & spawn_entity
+    # Publish robot_state_publisher
     rsp = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -45,12 +46,13 @@ def generate_launch_description():
         }],
         arguments=['--ros-args', '--log-level', 'DEBUG']
     )
+
+    # Spawn entity
     spawn = Node(
         package='gazebo_ros',
         executable='spawn_entity.py',
-        arguments=['-entity', 'agv', '-file', urdf, '-x', '0', '-y', '0', '-z', '0.3', '-timeout', '30'],
         output='screen',
-        arguments=['--ros-args', '--log-level', 'DEBUG']
+        arguments=['-entity', 'agv', '-file', urdf, '-x', '0', '-y', '0', '-z', '0.3', '-timeout', '30', '--ros-args', '--log-level', 'DEBUG']
     )
 
     # AGV interface node
@@ -73,8 +75,9 @@ def generate_launch_description():
             cmd=['check_urdf', urdf],
             output='screen'
         ),
+        LogInfo(msg='Launching nodes after 15s delay…'),
         TimerAction(
-            period=10.0,  # Increased delay for Gazebo initialization
+            period=15.0,  # Increased delay for Gazebo initialization
             actions=[rsp, spawn, interface]
         )
     ])
