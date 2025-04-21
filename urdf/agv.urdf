@@ -203,6 +203,7 @@
     <origin xyz="-0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/>
     <dynamics damping="0.1" friction="0.1"/>
+    <limit effort="100" velocity="10"/>
   </joint>
   <joint name="base_to_rear_right" type="continuous">
     <parent link="base_link"/>
@@ -210,6 +211,7 @@
     <origin xyz="-0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/>
     <dynamics damping="0.1" friction="0.1"/>
+    <limit effort="100" velocity="10"/>
   </joint>
 
   <!-- Gazebo plugins -->
@@ -217,11 +219,15 @@
     <plugin name="ackermann_drive" filename="libgazebo_ros_ackermann_drive.so">
       <ros>
         <namespace>/</namespace>
+        <remapping>odom:=odom</remapping>
+        <remapping>cmd_vel:=cmd_vel</remapping>
       </ros>
       <odometry_topic>odom</odometry_topic>
       <command_topic>cmd_vel</command_topic>
       <odometry_frame>odom</odometry_frame>
       <robot_base_frame>base_link</robot_base_frame>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
       <front_left_steering_joint>base_to_front_left</front_left_steering_joint>
       <front_right_steering_joint>base_to_front_right</front_right_steering_joint>
       <rear_left_drive_joint>base_to_rear_left</rear_left_drive_joint>
@@ -229,6 +235,7 @@
       <wheelbase>1.5</wheelbase>
       <track>0.8</track>
       <wheel_diameter>0.3</wheel_diameter>
+      <steering_ratio>1.0</steering_ratio>
       <max_steering_angle>0.9</max_steering_angle>
       <max_speed>3.0</max_speed>
       <update_rate>100</update_rate>

@@ -26,9 +26,12 @@ class PID:
 class AGVInterface(Node):
     def __init__(self):
         super().__init__('agv_interface')
+        self.declare_parameter('odom_topic', '/odom')
+        odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
+
         self.path_pub = self.create_publisher(Path, 'trajectory', 10)
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
-        self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
+        self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
         self.map_sub = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
         self.timer = self.create_timer(0.1, self.control_loop)
 
@@ -50,6 +53,8 @@ class AGVInterface(Node):
         self.show_waypoints = True
         self.blink_state = True
         self.last_blink_time = time.time()
+        self.last_odom_time = None
+        self.odom_timeout = 5.0  # seconds
 
         # Pygame setup
         pygame.init()
@@ -68,6 +73,7 @@ class AGVInterface(Node):
         self.placeholder_color = (150, 150, 150)
         self.text_bg_color = (255, 255, 255, 180)
         self.warning_color = (255, 100, 100, 200)
+        self.waiting_color = (255, 165, 0, 200)
         self.point_radius = 5
         self.agv_radius = 10
         self.clock = pygame.time.Clock()
@@ -75,12 +81,17 @@ class AGVInterface(Node):
         pygame.display.flip()
 
     def odom_callback(self, msg):
-        self.current_pose = msg.pose.pose
-        if self.current_pose:
-            self.actual_path.append((self.current_pose.position.x, self.current_pose.position.y))
-            self.get_logger().info('Received valid odom data')
-        else:
-            self.get_logger().warn('Received invalid odom data')
+        try:
+            self.current_pose = msg.pose.pose
+            self.last_odom_time = time.time()
+            if self.current_pose:
+                self.actual_path.append((self.current_pose.position.x, self.current_pose.position.y))
+                self.get_logger().info(f'Received odom: frame_id={msg.header.frame_id}, '
+                                      f'pos=({msg.pose.pose.position.x:.2f}, {msg.pose.pose.position.y:.2f})')
+            else:
+                self.get_logger().warn('Received odom with invalid pose')
+        except Exception as e:
+            self.get_logger().error(f'Odom callback error: {e}')
 
     def map_callback(self, msg):
         self.map_data = msg
@@ -339,13 +350,18 @@ class AGVInterface(Node):
             # Draw labels and status
             try:
                 font = pygame.font.SysFont(None, 24)
+                odom_status = 'Spawned' if self.current_pose else (
+                    'Waiting for Odometry' if self.last_odom_time and (time.time() - self.last_odom_time < self.odom_timeout)
+                    else 'Not Spawned'
+                )
                 texts = [
                     f'Mode: {self.mode.capitalize()}',
                     f'Kp={self.pid.Kp:.2f} Ki={self.pid.Ki:.3f} Kd={self.pid.Kd:.2f}',
                     f'Scale: {self.scale} px/m',
                     f'Waypoint: {self.current_waypoint_index}/{len(self.path) if self.path else 0}',
                     f'Pose: ({self.current_pose.position.x:.2f}, {self.current_pose.position.y:.2f})' if self.current_pose else 'Pose: N/A',
-                    f'AGV: {"Spawned" if self.current_pose else "Not Spawned"}',
+                    f'AGV: {odom_status}',
+                    f'Last Odom: {time.strftime("%H:%M:%S", time.localtime(self.last_odom_time)) if self.last_odom_time else "N/A"}',
                 ]
                 text_y = 10
                 for text in texts:
@@ -361,20 +377,20 @@ class AGVInterface(Node):
             except Exception:
                 pass
 
-            # Draw warning for spawn failure
+            # Draw warning for spawn failure or odometry timeout
             if not self.current_pose:
                 try:
                     warning_texts = [
-                        "AGV Not Spawned!",
+                        f"AGV {odom_status}!",
                         "Check:",
-                        "- URDF syntax: check_urdf agv.urdf",
+                        f"- Odom topic: {self.get_parameter('odom_topic').value}",
                         "- Plugin: libgazebo_ros_ackermann_drive.so",
                         "- Gazebo logs for errors",
-                        "- File permissions",
+                        "- ROS topic: ros2 topic echo /odom",
                         "- ROS/Gazebo versions",
                     ]
                     warning_surface = pygame.Surface((300, 200), pygame.SRCALPHA)
-                    warning_surface.fill(self.warning_color)
+                    warning_surface.fill(self.waiting_color if odom_status == 'Waiting for Odometry' else self.warning_color)
                     for i, text in enumerate(warning_texts):
                         text_surface = font.render(text, True, (0, 0, 0))
                         warning_surface.blit(text_surface, (10, 10 + i * 24))
@@ -405,7 +421,7 @@ class AGVInterface(Node):
                         "Left click: Add waypoint",
                         "Right click: Remove last waypoint",
                         "Troubleshooting:",
-                        "- Check URDF: check_urdf agv.urdf",
+                        f"- Check odom: ros2 topic echo {self.get_parameter('odom_topic').value}",
                         "- Verify plugin: find /opt/ros/humble",
                         "- Check Gazebo logs",
                     ]
