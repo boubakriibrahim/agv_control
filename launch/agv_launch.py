@@ -1,66 +1,80 @@
 from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription, TimerAction, LogInfo
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess, LogInfo, TimerAction
 from ament_index_python.packages import get_package_share_directory
 import os
 import subprocess
 
 def generate_launch_description():
+    # locate files
     pkg_share = get_package_share_directory('agv_control')
-    urdf_file = os.path.join(pkg_share, 'urdf', 'agv.urdf')
-    world_file = os.path.join(pkg_share, 'worlds', 'agv_world.world')
+    urdf_file  = os.path.join(pkg_share, 'urdf',   'agv.urdf')
+    world_file = os.path.join(pkg_share, 'worlds','agv_world.world')
+    gazebo_share = get_package_share_directory('gazebo_ros')
 
-    # Verify files exist
+    # sanity checks
     if not os.path.exists(urdf_file):
-        raise FileNotFoundError(f'URDF file not found: {urdf_file}')
+        raise FileNotFoundError(f'URDF not found: {urdf_file}')
     if not os.path.exists(world_file):
-        raise FileNotFoundError(f'World file not found: {world_file}')
+        raise FileNotFoundError(f'World not found: {world_file}')
 
-    # Validate URDF
+    # Validate URDF on disk
     try:
-        subprocess.run(['check_urdf', urdf_file], check=True, capture_output=True, text=True)
+        subprocess.run(
+            ['check_urdf', urdf_file],
+            check=True, capture_output=True, text=True
+        )
         print('URDF validation passed')
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f'URDF validation failed: {e.stderr}')
+        raise RuntimeError(f'URDF validation failed:\n{e.stderr}')
 
-    # Launch Gazebo with ROS plugins
-    gazebo_cmd = [
-        'gazebo', '--verbose',
-        '-s', 'libgazebo_ros_init.so',
-        '-s', 'libgazebo_ros_factory.so',
-        world_file
-    ]
+    # 1) Launch Gazebo with ROS plugins (init + factory)
+    gazebo = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(gazebo_share, 'launch', 'gazebo.launch.py')
+        ),
+        launch_arguments={'world': world_file}.items()
+    )
 
-    # Node: publish robot description
-    robot_state_publisher = Node(
+    # 2) robot_state_publisher for your URDF
+    rsp = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': open(urdf_file).read()
+            'robot_description': open(urdf_file).read(),
+            'publish_robot_description': True,
+            # enable sim time so your interface and tf use /clock
+            'use_sim_time': True,
         }]
     )
 
-    # Node: spawn entity
-    spawn_entity = Node(
+    # 3) spawn_entity to inject your AGV model into Gazebo
+    spawn = Node(
         package='gazebo_ros',
         executable='spawn_entity.py',
-        arguments=['-entity', 'agv', '-file', urdf_file, '-x', '0', '-y', '0', '-z', '0.3', '-timeout', '30'],
-        output='screen'
+        name='spawn_agv',
+        output='screen',
+        arguments=[
+            '-entity', 'agv',
+            '-file',    urdf_file,
+            '-x',       '0', '-y', '0', '-z', '0.3',
+            '-timeout', '30'
+        ]
     )
 
     return LaunchDescription([
-        LogInfo(msg=f'Loading world: {world_file}'),
-        ExecuteProcess(cmd=gazebo_cmd, output='screen'),
-        LogInfo(msg='Waiting for Gazebo to initialize plugins...'),
+        LogInfo(msg='⏳ Starting Gazebo…'),
+        gazebo,
+        # give Gazebo 5s to load init+factory and start up
         TimerAction(
             period=5.0,
             actions=[
-                LogInfo(msg='Publishing robot description'),
-                robot_state_publisher,
-                LogInfo(msg='Spawning AGV in Gazebo'),
-                spawn_entity
-            ]
-        )
+                LogInfo(msg='🚀 Publishing robot_state_publisher and spawning AGV'),
+                rsp,
+                spawn,
+            ],
+        ),
     ])
