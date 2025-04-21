@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Path, Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist, PoseStamped
-from math import atan2, sqrt, pi, cos, sin
+from math import atan2, sqrt, pi, cos, sin, isnan, isinf
 import pygame
 import sys
 import time
@@ -33,19 +33,20 @@ class AGVInterface(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
         self.map_sub = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
-        self.timer = self.create_timer(0.02, self.control_loop)  # 50 Hz
+        self.timer = self.create_timer(0.05, self.control_loop)  # 20 Hz
 
         self.path = None
         self.current_waypoint_index = 0
         self.current_pose = None
         self.map_data = None
-        self.pid = PID(Kp=2.5, Ki=0.0, Kd=0.7)  # Stable gains
+        self.pid = PID(Kp=2.0, Ki=0.0, Kd=0.5)  # Smoother gains
         self.linear_velocity = 10.0  # Default 10 m/s
         self.min_velocity = 0.1
         self.waypoint_threshold = 0.4
         self.lookahead_distance = 0.5
-        self.max_angular_vel = 0.8  # Reduced for stability
-        self.max_accel = 10.0  # Smoother transitions
+        self.max_angular_vel = 0.8
+        self.max_linear_vel = 10.0  # Limit to prevent crash
+        self.max_accel = 15.0  # Smoother transitions
         self.prev_linear_vel = 0.0
         self.actual_path = []
         self.waypoints = []
@@ -489,15 +490,25 @@ class AGVInterface(Node):
             scaled_velocity = self.linear_velocity * velocity_scale
 
             # PID control
-            dt = 0.02  # Match timer rate
-            steering_angle = self.pid.compute(error, dt)
-            steering_angle = max(min(steering_angle, self.max_angular_vel), -self.max_angular_vel)
+            dt = 0.05  # Match timer rate
+            try:
+                steering_angle = self.pid.compute(error, dt)
+                steering_angle = max(min(steering_angle, self.max_angular_vel), -self.max_angular_vel)
+            except Exception as e:
+                self.get_logger().error(f'PID error: {e}')
+                return
 
-            # Rate limit linear velocity
+            # Rate limit and sanitize linear velocity
             twist = Twist()
-            twist.linear.x = max(min(scaled_velocity, self.prev_linear_vel + self.max_accel * dt), 
+            target_linear_vel = max(min(scaled_velocity, self.max_linear_vel), 0.0)
+            twist.linear.x = max(min(target_linear_vel, self.prev_linear_vel + self.max_accel * dt), 
                                self.prev_linear_vel - self.max_accel * dt)
             twist.angular.z = steering_angle
+
+            # Sanitize cmd_vel
+            if isnan(twist.linear.x) or isinf(twist.linear.x) or isnan(twist.angular.z) or isinf(twist.angular.z):
+                self.get_logger().error(f'Invalid cmd_vel: linear.x={twist.linear.x}, angular.z={twist.angular.z}')
+                twist = Twist()
             self.cmd_vel_pub.publish(twist)
             self.prev_linear_vel = twist.linear.x
             self.get_logger().debug(f'Distance: {distance:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {twist.linear.x:.2f}m/s')
