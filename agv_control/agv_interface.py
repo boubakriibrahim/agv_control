@@ -33,17 +33,20 @@ class AGVInterface(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
         self.map_sub = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
-        self.timer = self.create_timer(0.05, self.control_loop)  # Increased update rate
+        self.timer = self.create_timer(0.02, self.control_loop)  # 50 Hz
 
         self.path = None
         self.current_waypoint_index = 0
         self.current_pose = None
         self.map_data = None
-        self.pid = PID(Kp=2.0, Ki=0.0, Kd=0.5)  # Tuned for better tracking
-        self.linear_velocity = 10.0  # 10x default speed
-        self.min_velocity = 0.1  # Minimum speed
-        self.waypoint_threshold = 0.3  # Increased for high speeds
-        self.lookahead_distance = 0.5  # Smooth path tracking
+        self.pid = PID(Kp=2.5, Ki=0.0, Kd=0.7)  # Refined for stability
+        self.linear_velocity = 10.0  # Default 10 m/s
+        self.min_velocity = 0.1
+        self.waypoint_threshold = 0.4  # Increased for high speeds
+        self.lookahead_distance = 0.5
+        self.max_angular_vel = 1.0  # Limit turn rate
+        self.max_accel = 5.0  # Max acceleration (m/s^2)
+        self.prev_linear_vel = 0.0  # For rate limiting
         self.actual_path = []
         self.waypoints = []
         self.mode = 'trajectory'
@@ -204,10 +207,10 @@ class AGVInterface(Node):
                     elif event.key == pygame.K_d and pygame.key.get_mods() & pygame.KMOD_SHIFT:
                         self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
                         self.get_logger().info(f'Decreased Kd to {self.pid.Kd}')
-                    elif event.key == pygame.K_u:  # Increase speed by 1.0 m/s
+                    elif event.key == pygame.K_u:
                         self.linear_velocity += 1.0
                         self.get_logger().info(f'Increased speed to {self.linear_velocity:.2f} m/s')
-                    elif event.key == pygame.K_j:  # Decrease speed by 1.0 m/s
+                    elif event.key == pygame.K_j:
                         self.linear_velocity = max(self.min_velocity, self.linear_velocity - 1.0)
                         self.get_logger().info(f'Decreased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
@@ -446,7 +449,7 @@ class AGVInterface(Node):
                     pass
 
             pygame.display.flip()
-            self.clock.tick(50)  # Increased tick rate for smoother control
+            self.clock.tick(60)  # 60 FPS
 
             if self.path is None or self.current_pose is None:
                 self.get_logger().warn('Waiting for path or pose data')
@@ -481,23 +484,25 @@ class AGVInterface(Node):
             desired_heading = atan2(target_y - current_y, target_x - current_x)
             current_heading = self.get_yaw(self.current_pose.orientation)
             error = desired_heading - current_heading
-            error = (error + pi) % (2 * pi) - pi  # Normalize to [-pi, pi]
+            error = (error + pi) % (2 * pi) - pi
 
-            # Scale velocity based on distance to prevent overshooting
+            # Scale velocity based on distance
             velocity_scale = min(1.0, distance / self.lookahead_distance)
             scaled_velocity = self.linear_velocity * velocity_scale
 
             # PID control
-            dt = 0.05  # Match timer rate
+            dt = 0.02  # Match timer rate
             steering_angle = self.pid.compute(error, dt)
-            steering_angle = max(min(steering_angle, 0.9), -0.9)  # Limit steering angle
+            steering_angle = max(min(steering_angle, self.max_angular_vel), -self.max_angular_vel)  # Rate limit
 
-            # Publish velocity command
+            # Rate limit linear velocity
             twist = Twist()
-            twist.linear.x = scaled_velocity
+            twist.linear.x = max(min(scaled_velocity, self.prev_linear_vel + self.max_accel * dt), 
+                               self.prev_linear_vel - self.max_accel * dt)
             twist.angular.z = steering_angle
             self.cmd_vel_pub.publish(twist)
-            self.get_logger().debug(f'Distance: {distance:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {scaled_velocity:.2f}m/s')
+            self.prev_linear_vel = twist.linear.x  # Update for next cycle
+            self.get_logger().debug(f'Distance: {distance:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {twist.linear.x:.2f}m/s')
 
         except Exception as e:
             self.get_logger().error(f'Control loop error: {e}')
