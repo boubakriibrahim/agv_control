@@ -1,6 +1,14 @@
 <?xml version="1.0" ?>
 <sdf version="1.6">
   <world name="agv_world">
+
+    <!-- Gazebo ROS factory plugin -->
+    <plugin name="gazebo_ros_factory" filename="libgazebo_ros_factory.so">
+      <ros>
+        <namespace>/</namespace>
+      </ros>
+    </plugin>
+
     <!-- Ground plane -->
     <model name="ground_plane">
       <static>true</static>
@@ -30,7 +38,7 @@
       </link>
     </model>
 
-    <!-- Walls -->
+    <!-- Wall 1 -->
     <model name="wall_1">
       <static>true</static>
       <pose>0 5 0.5 0 0 0</pose>
@@ -56,6 +64,8 @@
         </visual>
       </link>
     </model>
+
+    <!-- Wall 2 -->
     <model name="wall_2">
       <static>true</static>
       <pose>0 -5 0.5 0 0 0</pose>
@@ -109,7 +119,7 @@
       </link>
     </model>
 
-    <!-- Light -->
+    <!-- Light source -->
     <light type="point" name="sun">
       <pose>0 0 10 0 0 0</pose>
       <diffuse>0.8 0.8 0.8 1</diffuse>
@@ -121,5 +131,6 @@
         <quadratic>0.01</quadratic>
       </attenuation>
     </light>
+
   </world>
 </sdf>
