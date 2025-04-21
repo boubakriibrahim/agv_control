@@ -2,13 +2,6 @@
 <sdf version="1.6">
   <world name="agv_world">
 
-    <!-- Gazebo ROS factory plugin (name must match the registered WorldPlugin type) -->
-    <plugin name="GazeboRosFactory" filename="libgazebo_ros_factory.so">
-      <ros>
-        <namespace>/</namespace>
-      </ros>
-    </plugin>
-
     <!-- Ground plane -->
     <model name="ground_plane">
       <static>true</static>
