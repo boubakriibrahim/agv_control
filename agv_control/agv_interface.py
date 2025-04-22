@@ -33,20 +33,20 @@ class AGVInterface(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
         self.map_sub = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
-        self.timer = self.create_timer(0.05, self.control_loop)  # 20 Hz
+        self.timer = self.create_timer(0.1, self.control_loop)  # 10 Hz
 
         self.path = None
         self.current_waypoint_index = 0
         self.current_pose = None
         self.map_data = None
-        self.pid = PID(Kp=2.0, Ki=0.0, Kd=0.5)  # Smoother gains
-        self.linear_velocity = 10.0  # Default 10 m/s
+        self.pid = PID(Kp=1.5, Ki=0.0, Kd=0.3)  # Smoother gains
+        self.linear_velocity = 5.0  # Temporary 5 m/s
         self.min_velocity = 0.1
         self.waypoint_threshold = 0.4
         self.lookahead_distance = 0.5
         self.max_angular_vel = 0.8
-        self.max_linear_vel = 10.0  # Limit to prevent crash
-        self.max_accel = 15.0  # Smoother transitions
+        self.max_linear_vel = 5.0  # Temporary limit
+        self.max_accel = 20.0  # Smooth transitions
         self.prev_linear_vel = 0.0
         self.actual_path = []
         self.waypoints = []
@@ -466,6 +466,11 @@ class AGVInterface(Node):
             target_x = target_pose.position.x
             target_y = target_pose.position.y
 
+            # Validate pose data
+            if any(isnan(v) or isinf(v) for v in [current_x, current_y, target_x, target_y]):
+                self.get_logger().error(f'Invalid pose data: current=({current_x}, {current_y}), target=({target_x}, {target_y})')
+                return
+
             # Compute distance to waypoint
             distance = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
             if distance < self.waypoint_threshold:
@@ -490,7 +495,7 @@ class AGVInterface(Node):
             scaled_velocity = self.linear_velocity * velocity_scale
 
             # PID control
-            dt = 0.05  # Match timer rate
+            dt = 0.1  # Match timer rate
             try:
                 steering_angle = self.pid.compute(error, dt)
                 steering_angle = max(min(steering_angle, self.max_angular_vel), -self.max_angular_vel)
@@ -505,10 +510,15 @@ class AGVInterface(Node):
                                self.prev_linear_vel - self.max_accel * dt)
             twist.angular.z = steering_angle
 
-            # Sanitize cmd_vel
-            if isnan(twist.linear.x) or isinf(twist.linear.x) or isnan(twist.angular.z) or isinf(twist.angular.z):
+            # Enhanced sanitization
+            if any(isnan(v) or isinf(v) for v in [twist.linear.x, twist.angular.z]):
                 self.get_logger().error(f'Invalid cmd_vel: linear.x={twist.linear.x}, angular.z={twist.angular.z}')
                 twist = Twist()
+            elif abs(twist.linear.x) > self.max_linear_vel or abs(twist.angular.z) > self.max_angular_vel:
+                self.get_logger().warn(f'Clamping cmd_vel: linear.x={twist.linear.x}, angular.z={twist.angular.z}')
+                twist.linear.x = max(min(twist.linear.x, self.max_linear_vel), -self.max_linear_vel)
+                twist.angular.z = max(min(twist.angular.z, self.max_angular_vel), -self.max_angular_vel)
+
             self.cmd_vel_pub.publish(twist)
             self.prev_linear_vel = twist.linear.x
             self.get_logger().debug(f'Distance: {distance:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {twist.linear.x:.2f}m/s')
@@ -521,8 +531,12 @@ class AGVInterface(Node):
             siny_cosp = 2 * (q.w * q.z + q.x * q.y)
             cosy_cosp = 1 - 2 * (q.y**2 + q.z**2)
             yaw = atan2(siny_cosp, cosy_cosp)
+            if isnan(yaw) or isinf(yaw):
+                self.get_logger().error(f'Invalid yaw: {yaw}')
+                return 0.0
             return yaw
         except Exception:
+            self.get_logger().error('Yaw calculation error')
             return 0.0
 
 def main(args=None):
