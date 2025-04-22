@@ -8,12 +8,53 @@ import pygame
 import sys
 import time
 import os
+import yaml
+
+class PID:
+    def __init__(self, Kp, Ki, Kd):
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+        self.prev_error = 0.0
+        self.integral = 0.0
+
+    def compute(self, error, dt):
+        self.integral += error * dt
+        derivative = (error - self.prev_error) / dt if dt > 0 else 0.0
+        output = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
+        self.prev_error = error
+        return output
 
 class AGVInterface(Node):
     def __init__(self):
         super().__init__('agv_interface')
         self.declare_parameter('odom_topic', '/agv/odom')
+        self.declare_parameter('config_path', os.path.join(
+            get_package_share_directory('agv_control'), 'config', 'config.yaml'))
         odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
+        config_path = self.get_parameter('config_path').get_parameter_value().string_value
+
+        # Load configuration
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            self.pid = PID(
+                config.get('pid_kp', 1.5),
+                config.get('pid_ki', 0.0),
+                config.get('pid_kd', 0.3)
+            )
+            self.linear_velocity = config.get('linear_velocity', 5.0)
+            self.lookahead_distance = config.get('lookahead_distance', 0.7)
+            self.max_linear_vel = config.get('max_linear_vel', 7.0)
+            self.max_angular_vel = config.get('max_angular_vel', 0.5)
+            self.get_logger().info(f'Loaded config: {config}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to load config: {e}')
+            self.pid = PID(Kp=1.5, Ki=0.0, Kd=0.3)
+            self.linear_velocity = 5.0
+            self.lookahead_distance = 0.7
+            self.max_linear_vel = 7.0
+            self.max_angular_vel = 0.5
 
         self.path_pub = self.create_publisher(Path, '/agv/trajectory', 10)
         self.cmd_vel_pub = self.create_publisher(Twist, '/agv/cmd_vel', 10)
@@ -23,17 +64,12 @@ class AGVInterface(Node):
         self.timer = self.create_timer(0.1, self.control_loop)  # 10 Hz
 
         self.path = None
-        self.current_waypoint_index = 0
         self.current_pose = None
         self.map_data = None
         self.joint_states = None
-        self.linear_velocity = 1.0  # Base speed
-        self.min_velocity = 0.2
-        self.waypoint_threshold = 0.5  # Increased for smooth transitions
-        self.max_angular_vel = 0.5  # Reduced for gentle turns
-        self.max_linear_vel = 2.0  # Reduced for stability
-        self.kv = 0.5  # Linear velocity gain
-        self.kw = 0.3  # Angular velocity gain
+        self.min_velocity = 0.5
+        self.max_accel = 0.5
+        self.prev_linear_vel = 0.0
         self.actual_path = []
         self.waypoints = []
         self.mode = 'trajectory'
@@ -47,6 +83,7 @@ class AGVInterface(Node):
         self.last_blink_time = time.time()
         self.last_odom_time = None
         self.odom_timeout = 5.0
+        self.path_log_file = 'path_log.txt'
 
         # Pygame setup
         pygame.init()
@@ -124,9 +161,24 @@ class AGVInterface(Node):
         if not self.waypoints:
             self.get_logger().warn('No waypoints to publish')
             return
+        if not self.current_pose:
+            self.get_logger().warn('No current pose; cannot publish trajectory')
+            return
         path = Path()
         path.header.frame_id = 'odom'
         path.header.stamp = self.get_clock().now().to_msg()
+
+        # Prepend current position
+        current_pose = PoseStamped()
+        current_pose.header.frame_id = 'odom'
+        current_pose.header.stamp = path.header.stamp
+        current_pose.pose.position.x = self.current_pose.position.x
+        current_pose.pose.position.y = self.current_pose.position.y
+        current_pose.pose.position.z = 0.0
+        current_pose.pose.orientation = self.current_pose.orientation
+        path.poses.append(current_pose)
+
+        # Add waypoints
         for wp in self.waypoints:
             pose = PoseStamped()
             pose.header.frame_id = 'odom'
@@ -141,15 +193,23 @@ class AGVInterface(Node):
             pose.pose.position.z = 0.0
             pose.pose.orientation.w = 1.0
             path.poses.append(pose)
-        if not path.poses:
-            self.get_logger().warn('No valid waypoints to publish')
+        if len(path.poses) < 2:
+            self.get_logger().warn('Insufficient valid waypoints to publish')
             return
         self.path = path.poses
-        self.current_waypoint_index = 0
         self.actual_path.clear()
         self.path_pub.publish(path)
-        self.get_logger().info(f'Published /agv/trajectory with {len(self.path)} waypoints')
+        self.get_logger().info(f'Published /agv/trajectory with {len(self.path)} points')
         self.waypoints.clear()
+
+        # Log path
+        try:
+            with open(self.path_log_file, 'a') as f:
+                f.write(f'\nTrajectory at {time.strftime("%Y-%m-%d %H:%M:%S")}\n')
+                for pose in self.path:
+                    f.write(f'({pose.pose.position.x:.2f}, {pose.pose.position.y:.2f})\n')
+        except Exception as e:
+            self.get_logger().error(f'Failed to log path: {e}')
 
     def control_loop(self):
         try:
@@ -184,12 +244,36 @@ class AGVInterface(Node):
                     elif event.key == pygame.K_v:
                         self.mode = 'view'
                         self.get_logger().info('Switched to view mode')
+                    elif event.key == pygame.K_p:
+                        self.pid.Kp += 0.1
+                        self.get_logger().info(f'Increased Kp to {self.pid.Kp:.2f}')
+                    elif event.key == pygame.K_p and pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                        self.pid.Kp = max(0.1, self.pid.Kp - 0.1)
+                        self.get_logger().info(f'Decreased Kp to {self.pid.Kp:.2f}')
+                    elif event.key == pygame.K_i:
+                        self.pid.Ki += 0.001
+                        self.get_logger().info(f'Increased Ki to {self.pid.Ki:.3f}')
+                    elif event.key == pygame.K_i and pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                        self.pid.Ki = max(0.0, self.pid.Ki - 0.001)
+                        self.get_logger().info(f'Decreased Ki to {self.pid.Ki:.3f}')
+                    elif event.key == pygame.K_d:
+                        self.pid.Kd += 0.05
+                        self.get_logger().info(f'Increased Kd to {self.pid.Kd:.2f}')
+                    elif event.key == pygame.K_d and pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                        self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
+                        self.get_logger().info(f'Decreased Kd to {self.pid.Kd:.2f}')
                     elif event.key == pygame.K_u:
-                        self.linear_velocity += 0.2
+                        self.linear_velocity += 0.5
                         self.get_logger().info(f'Increased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_j:
-                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.2)
+                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.5)
                         self.get_logger().info(f'Decreased speed to {self.linear_velocity:.2f} m/s')
+                    elif event.key == pygame.K_l:
+                        self.lookahead_distance += 0.1
+                        self.get_logger().info(f'Increased lookahead to {self.lookahead_distance:.2f} m')
+                    elif event.key == pygame.K_k:
+                        self.lookahead_distance = max(0.3, self.lookahead_distance - 0.1)
+                        self.get_logger().info(f'Decreased lookahead to {self.lookahead_distance:.2f} m')
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
                         self.scale = min(200, self.scale + 10)
                         self.get_logger().info(f'Zoom in: scale={self.scale}')
@@ -320,9 +404,10 @@ class AGVInterface(Node):
             joint_status = f'Joints: {len(self.joint_states.name) if self.joint_states else 0}/4'
             texts = [
                 f'Mode: {self.mode.capitalize()}',
+                f'Kp={self.pid.Kp:.2f} Ki={self.pid.Ki:.3f} Kd={self.pid.Kd:.2f}',
                 f'Speed: {self.linear_velocity:.2f} m/s',
+                f'Lookahead: {self.lookahead_distance:.2f} m',
                 f'Scale: {self.scale} px/m',
-                f'Waypoint: {self.current_waypoint_index}/{len(self.path) if self.path else 0}',
                 f'Pose: ({self.current_pose.position.x:.2f}, {self.current_pose.position.y:.2f})' if self.current_pose else 'Pose: N/A',
                 f'AGV: {odom_status}',
                 f'{joint_status}',
@@ -366,8 +451,10 @@ class AGVInterface(Node):
                     "v: View mode",
                     "s: Send trajectory",
                     "c: Clear waypoints",
-                    "u: Speed +0.2 m/s",
-                    "j: Speed -0.2 m/s",
+                    "p/i/d: Adjust PID gains",
+                    "Shift+p/i/d: Decrease PID",
+                    "u/j: Speed ±0.5 m/s",
+                    "l/k: Lookahead ±0.1 m",
                     "+/-: Zoom",
                     "Arrows: Pan",
                     "r: Reset view",
@@ -395,56 +482,69 @@ class AGVInterface(Node):
             # Debug topics
             if not self.current_pose:
                 self.get_logger().warn('No pose data; check /agv/odom')
+                return
             if not self.joint_states or len(self.joint_states.name) < 4:
                 self.get_logger().warn(f'Missing joints; expected 4, got {len(self.joint_states.name) if self.joint_states else 0}')
 
-            if self.path is None or self.current_pose is None:
-                self.get_logger().warn('Waiting for path or pose')
+            if self.path is None:
+                self.get_logger().warn('Waiting for path')
                 return
 
-            if self.current_waypoint_index >= len(self.path):
-                twist = Twist()
-                self.cmd_vel_pub.publish(twist)
-                self.get_logger().info('Trajectory completed; stopping AGV')
-                self.path = None
-                return
-
-            target_pose = self.path[self.current_waypoint_index].pose
+            # Pure pursuit controller
             current_x = self.current_pose.position.x
             current_y = self.current_pose.position.y
-            target_x = target_pose.position.x
-            target_y = target_pose.position.y
+            current_yaw = self.get_yaw(self.current_pose.orientation)
 
-            # Validate pose
-            if any(isnan(v) or isinf(v) for v in [current_x, current_y, target_x, target_y]):
-                self.get_logger().error(f'Invalid pose: current=({current_x:.2f}, {current_y:.2f}), target=({target_x:.2f}, {target_y:.2f})')
+            # Find closest point on path
+            min_dist = float('inf')
+            lookahead_point = None
+            for i, pose in enumerate(self.path):
+                px = pose.pose.position.x
+                py = pose.pose.position.y
+                dist = sqrt((px - current_x)**2 + (py - current_y)**2)
+                if dist < min_dist:
+                    min_dist = dist
+                if dist >= self.lookahead_distance and min_dist <= dist:
+                    lookahead_point = (px, py)
+                    break
+
+            if not lookahead_point:
+                # Use last point if no lookahead point found
+                lookahead_point = (self.path[-1].pose.position.x, self.path[-1].pose.position.y)
+                dist = sqrt((lookahead_point[0] - current_x)**2 + (lookahead_point[1] - current_y)**2)
+                if dist < 0.3:
+                    twist = Twist()
+                    self.cmd_vel_pub.publish(twist)
+                    self.get_logger().info('Reached end of path; stopping AGV')
+                    self.path = None
+                    return
+
+            # Compute control commands
+            lx, ly = lookahead_point
+            desired_heading = atan2(ly - current_y, lx - current_x)
+            error = desired_heading - current_yaw
+            error = (error + pi) % (2 * pi) - pi  # Normalize to [-π, π]
+
+            # PID control for angular velocity
+            dt = 0.1
+            try:
+                steering_angle = self.pid.compute(error, dt)
+                steering_angle = max(min(steering_angle, self.max_angular_vel), -self.max_angular_vel)
+            except Exception as e:
+                self.get_logger().error(f'PID error: {e}')
                 return
 
-            # Compute distance
-            distance = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
-            if distance < self.waypoint_threshold:
-                self.current_waypoint_index += 1
-                if self.current_waypoint_index < len(self.path):
-                    self.get_logger().info(f'Reached waypoint {self.current_waypoint_index - 1}')
-                return
+            # Linear velocity with smooth scaling
+            velocity_scale = 1.0 - pow(2.71828, -min_dist / self.lookahead_distance)
+            scaled_velocity = self.linear_velocity * velocity_scale
+            scaled_velocity = max(self.min_velocity, scaled_velocity)
 
-            # Kinematic model
-            desired_heading = atan2(target_y - current_y, target_x - current_x)
-            current_heading = self.get_yaw(self.current_pose.orientation)
-            heading_error = atan2(sin(desired_heading - current_heading), cos(desired_heading - current_heading))
-
-            # Proportional control
-            linear_vel = self.kv * min(distance, 2.0) * self.linear_velocity
-            angular_vel = self.kw * heading_error
-
-            # Cap velocities
-            linear_vel = max(min(linear_vel, self.max_linear_vel), 0.0)
-            angular_vel = max(min(angular_vel, self.max_angular_vel), -self.max_angular_vel)
-
-            # Publish cmd_vel
+            # Rate limit velocity
             twist = Twist()
-            twist.linear.x = linear_vel
-            twist.angular.z = angular_vel
+            target_linear_vel = max(min(scaled_velocity, self.max_linear_vel), 0.0)
+            twist.linear.x = max(min(target_linear_vel, self.prev_linear_vel + self.max_accel * dt), 
+                               self.prev_linear_vel - self.max_accel * dt)
+            twist.angular.z = steering_angle
 
             # Sanitize cmd_vel
             if any(isnan(v) or isinf(v) for v in [twist.linear.x, twist.angular.z]):
@@ -456,7 +556,8 @@ class AGVInterface(Node):
                 twist.angular.z = max(min(twist.angular.z, self.max_angular_vel), -self.max_angular_vel)
 
             self.cmd_vel_pub.publish(twist)
-            self.get_logger().debug(f'Distance: {distance:.2f}m, Heading Error: {heading_error:.2f}rad, Linear Vel: {twist.linear.x:.2f}m/s, Angular Vel: {twist.angular.z:.2f}rad/s')
+            self.prev_linear_vel = twist.linear.x
+            self.get_logger().debug(f'Distance: {min_dist:.2f}m, Heading Error: {error:.2f}rad, Velocity: {twist.linear.x:.2f}m/s, Steering: {twist.angular.z:.2f}rad/s')
 
         except Exception as e:
             self.get_logger().error(f'Control loop error: {e}')

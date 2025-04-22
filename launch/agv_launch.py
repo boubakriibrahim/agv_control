@@ -67,7 +67,7 @@ def generate_launch_description():
             'use_sim_time': True,
             'odom_topic': '/agv/odom'
         }],
-        arguments=['--ros-args', '--log-level', 'DEBUG']  # Corrected 'pertinents' to 'arguments'
+        arguments=['--ros-args', '--log-level', 'DEBUG']
     )
 
     return LaunchDescription([

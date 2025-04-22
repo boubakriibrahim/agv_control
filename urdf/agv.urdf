@@ -16,14 +16,14 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="150"/> <!-- Increased for stability -->
-      <inertia ixx="20.0" ixy="0.0" ixz="0.0" iyy="20.0" iyz="0.0" izz="30.0"/>
+      <mass value="50"/> <!-- Reduced for stability -->
+      <inertia ixx="7.5" ixy="0.0" ixz="0.0" iyy="7.5" iyz="0.0" izz="12.5"/>
     </inertial>
   </link>
   <gazebo reference="base_link">
     <material>Gazebo/Blue</material>
-    <mu1>0.8</mu1>
-    <mu2>0.8</mu2>
+    <mu1>0.5</mu1> <!-- Reduced friction -->
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Front left wheel -->
@@ -43,8 +43,8 @@
       <surface>
         <friction>
           <ode>
-            <mu>0.8</mu>
-            <mu2>0.8</mu2>
+            <mu>0.5</mu> <!-- Reduced friction -->
+            <mu2>0.5</mu2>
             <fdir1>0 1 0</fdir1>
             <slip1>0.0</slip1>
             <slip2>0.0</slip2>
@@ -52,8 +52,8 @@
         </friction>
         <contact>
           <ode>
-            <kp>10000000.0</kp>
-            <kd>1000.0</kd>
+            <kp>1000000.0</kp> <!-- Reduced for stability -->
+            <kd>100.0</kd>
           </ode>
         </contact>
       </surface>
@@ -65,8 +65,8 @@
   </link>
   <gazebo reference="front_left_wheel">
     <material>Gazebo/Black</material>
-    <mu1>0.8</mu1>
-    <mu2>0.8</mu2>
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Front right wheel -->
@@ -86,8 +86,8 @@
       <surface>
         <friction>
           <ode>
-            <mu>0.8</mu>
-            <mu2>0.8</mu2>
+            <mu>0.5</mu>
+            <mu2>0.5</mu2>
             <fdir1>0 1 0</fdir1>
             <slip1>0.0</slip1>
             <slip2>0.0</slip2>
@@ -95,8 +95,8 @@
         </friction>
         <contact>
           <ode>
-            <kp>10000000.0</kp>
-            <kd>1000.0</kd>
+            <kp>1000000.0</kp>
+            <kd>100.0</kd>
           </ode>
         </contact>
       </surface>
@@ -108,8 +108,8 @@
   </link>
   <gazebo reference="front_right_wheel">
     <material>Gazebo/Black</material>
-    <mu1>0.8</mu1>
-    <mu2>0.8</mu2>
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Rear left wheel -->
@@ -129,8 +129,8 @@
       <surface>
         <friction>
           <ode>
-            <mu>0.8</mu>
-            <mu2>0.8</mu2>
+            <mu>0.5</mu>
+            <mu2>0.5</mu2>
             <fdir1>0 1 0</fdir1>
             <slip1>0.0</slip1>
             <slip2>0.0</slip2>
@@ -138,8 +138,8 @@
         </friction>
         <contact>
           <ode>
-            <kp>10000000.0</kp>
-            <kd>1000.0</kd>
+            <kp>1000000.0</kp>
+            <kd>100.0</kd>
           </ode>
         </contact>
       </surface>
@@ -151,8 +151,8 @@
   </link>
   <gazebo reference="rear_left_wheel">
     <material>Gazebo/Black</material>
-    <mu1>0.8</mu1>
-    <mu2>0.8</mu2>
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Rear right wheel -->
@@ -172,8 +172,8 @@
       <surface>
         <friction>
           <ode>
-            <mu>0.8</mu>
-            <mu2>0.8</mu2>
+            <mu>0.5</mu>
+            <mu2>0.5</mu2>
             <fdir1>0 1 0</fdir1>
             <slip1>0.0</slip1>
             <slip2>0.0</slip2>
@@ -181,8 +181,8 @@
         </friction>
         <contact>
           <ode>
-            <kp>10000000.0</kp>
-            <kd>1000.0</kd>
+            <kp>1000000.0</kp>
+            <kd>100.0</kd>
           </ode>
         </contact>
       </surface>
@@ -194,8 +194,8 @@
   </link>
   <gazebo reference="rear_right_wheel">
     <material>Gazebo/Black</material>
-    <mu1>0.8</mu1>
-    <mu2>0.8</mu2>
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
   </gazebo>
 
   <!-- Joints -->
@@ -204,32 +204,32 @@
     <child link="front_left_wheel"/>
     <origin xyz="0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Caster wheel -->
-    <limit effort="10" velocity="20"/>
-    <dynamics damping="1.0" friction="0.5"/> <!-- Increased damping -->
+    <limit effort="5" velocity="10"/> <!-- Reduced for stability -->
+    <dynamics damping="0.7" friction="0.3"/> <!-- Increased damping -->
   </joint>
   <joint name="base_to_front_right" type="continuous">
     <parent link="base_link"/>
     <child link="front_right_wheel"/>
     <origin xyz="0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Caster wheel -->
-    <limit effort="10" velocity="20"/>
-    <dynamics damping="1.0" friction="0.5"/>
+    <limit effort="5" velocity="10"/>
+    <dynamics damping="0.7" friction="0.3"/>
   </joint>
   <joint name="base_to_rear_left" type="revolute">
     <parent link="base_link"/>
     <child link="rear_left_wheel"/>
     <origin xyz="-0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Drive axis -->
-    <limit lower="-1.5708" upper="1.5708" effort="50" velocity="10"/> <!-- Limited to ±90 degrees -->
-    <dynamics damping="1.0" friction="0.5"/>
+    <limit lower="-1.5708" upper="1.5708" effort="50" velocity="10"/> <!-- ±90 degrees -->
+    <dynamics damping="0.7" friction="0.3"/>
   </joint>
   <joint name="base_to_rear_right" type="revolute">
     <parent link="base_link"/>
     <child link="rear_right_wheel"/>
     <origin xyz="-0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Drive axis -->
-    <limit lower="-1.5708" upper="1.5708" effort="50" velocity="10"/> <!-- Limited to ±90 degrees -->
-    <dynamics damping="1.0" friction="0.5"/>
+    <limit lower="-1.5708" upper="1.5708" effort="50" velocity="10"/>
+    <dynamics damping="0.7" friction="0.3"/>
   </joint>
 
   <!-- Gazebo plugins -->
