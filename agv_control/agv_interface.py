@@ -10,16 +10,19 @@ import time
 import os
 
 class PID:
-    def __init__(self, Kp, Ki, Kd):
+    def __init__(self, Kp, Ki, Kd, integral_limit=10.0):
         self.Kp = Kp
         self.Ki = Ki
         self.Kd = Kd
+        self.integral_limit = integral_limit
         self.prev_error = 0.0
         self.integral = 0.0
 
     def compute(self, error, dt):
         self.integral += error * dt
-        derivative = (error - self.prev_error) / dt
+        # Limit integral to prevent windup
+        self.integral = max(min(self.integral, self.integral_limit), -self.integral_limit)
+        derivative = (error - self.prev_error) / dt if dt > 0 else 0.0
         output = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
         self.prev_error = error
         return output
@@ -42,14 +45,14 @@ class AGVInterface(Node):
         self.current_pose = None
         self.map_data = None
         self.joint_states = None
-        self.pid = PID(Kp=1.0, Ki=0.01, Kd=0.2)  # Tuned for smoother tracking
-        self.linear_velocity = 1.0  # Reduced initial speed
-        self.min_velocity = 0.1
-        self.waypoint_threshold = 0.2  # Tighter threshold
-        self.lookahead_distance = 0.3  # Reduced for precision
-        self.max_angular_vel = 0.8  # Reduced for smoother turns
-        self.max_linear_vel = 2.0  # Reduced for control
-        self.max_accel = 1.0  # Smoother acceleration
+        self.pid = PID(Kp=2.0, Ki=0.005, Kd=0.5, integral_limit=5.0)  # Tuned for precision
+        self.linear_velocity = 2.0  # Increased for faster movement
+        self.min_velocity = 0.2
+        self.waypoint_threshold = 0.3  # Increased for reliable detection
+        self.lookahead_distance = 0.5  # Adjusted for dynamic lookahead
+        self.max_angular_vel = 1.0  # Increased slightly for responsiveness
+        self.max_linear_vel = 5.0  # Increased for faster movement
+        self.max_accel = 1.0
         self.prev_linear_vel = 0.0
         self.actual_path = []
         self.waypoints = []
@@ -221,10 +224,10 @@ class AGVInterface(Node):
                         self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
                         self.get_logger().info(f'Decreased Kd to {self.pid.Kd:.2f}')
                     elif event.key == pygame.K_u:
-                        self.linear_velocity += 0.1
+                        self.linear_velocity += 0.5
                         self.get_logger().info(f'Increased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_j:
-                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.1)
+                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.5)
                         self.get_logger().info(f'Decreased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
                         self.scale = min(200, self.scale + 10)
@@ -405,8 +408,8 @@ class AGVInterface(Node):
                     "c: Clear waypoints",
                     "p/i/d: Adjust PID gains",
                     "Shift+p/i/d: Decrease PID",
-                    "u: Speed +0.1 m/s",
-                    "j: Speed -0.1 m/s",
+                    "u: Speed +0.5 m/s",
+                    "j: Speed -0.5 m/s",
                     "+/-: Zoom",
                     "Arrows: Pan",
                     "r: Reset view",
@@ -445,7 +448,7 @@ class AGVInterface(Node):
                 twist = Twist()
                 self.cmd_vel_pub.publish(twist)
                 self.get_logger().info('Trajectory completed; stopping AGV')
-                self.path = None  # Reset path to allow new trajectory
+                self.path = None
                 return
 
             target_pose = self.path[self.current_waypoint_index].pose
@@ -461,27 +464,34 @@ class AGVInterface(Node):
 
             # Compute distance
             distance = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
-            if distance < self.waypoint_threshold:
+            
+            # Check orientation before transitioning
+            desired_heading = atan2(target_y - current_y, target_x - current_x)
+            current_heading = self.get_yaw(self.current_pose.orientation)
+            heading_error = abs((desired_heading - current_heading + pi) % (2 * pi) - pi)
+            
+            if distance < self.waypoint_threshold and heading_error < 0.2:  # Ensure aligned
                 self.current_waypoint_index += 1
                 if self.current_waypoint_index < len(self.path):
                     self.get_logger().info(f'Reached waypoint {self.current_waypoint_index - 1}')
                 return
 
-            # Lookahead adjustment
-            if distance > self.lookahead_distance:
-                target_x = current_x + self.lookahead_distance * cos(atan2(target_y - current_y, target_x - current_x))
-                target_y = current_y + self.lookahead_distance * sin(atan2(target_y - current_y, target_x - current_x))
+            # Dynamic lookahead based on speed
+            dynamic_lookahead = max(self.lookahead_distance, self.linear_velocity * 0.2)
+            if distance > dynamic_lookahead:
+                target_x = current_x + dynamic_lookahead * cos(atan2(target_y - current_y, target_x - current_x))
+                target_y = current_y + dynamic_lookahead * sin(atan2(target_y - current_y, target_x - current_x))
 
             # Heading error
             desired_heading = atan2(target_y - current_y, target_x - current_x)
             current_heading = self.get_yaw(self.current_pose.orientation)
             error = desired_heading - current_heading
-            error = (error + pi) % (2 * pi) - pi
+            error = (error + pi) % (2 * pi) - pi  # Normalize to [-π, π]
 
-            # Scale velocity based on distance
-            velocity_scale = min(1.0, distance / (2 * self.lookahead_distance))  # Smoother scaling
+            # Exponential velocity scaling
+            velocity_scale = 1.0 - pow(2.71828, -distance / self.lookahead_distance)
             scaled_velocity = self.linear_velocity * velocity_scale
-            scaled_velocity = max(self.min_velocity, scaled_velocity)  # Ensure minimum speed
+            scaled_velocity = max(self.min_velocity, scaled_velocity)
 
             # PID control
             dt = 0.1
@@ -510,7 +520,7 @@ class AGVInterface(Node):
 
             self.cmd_vel_pub.publish(twist)
             self.prev_linear_vel = twist.linear.x
-            self.get_logger().debug(f'Distance: {distance:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {twist.linear.x:.2f}m/s')
+            self.get_logger().debug(f'Distance: {distance:.2f}m, Heading Error: {error:.2f}rad, Velocity: {twist.linear.x:.2f}m/s, Steering: {twist.angular.z:.2f}rad/s')
 
         except Exception as e:
             self.get_logger().error(f'Control loop error: {e}')
