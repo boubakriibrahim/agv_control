@@ -39,6 +39,7 @@ def generate_launch_description():
     rsp = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
+        namespace='agv',
         output='screen',
         parameters=[{
             'robot_description': open(urdf).read(),
@@ -51,33 +52,35 @@ def generate_launch_description():
     spawn = Node(
         package='gazebo_ros',
         executable='spawn_entity.py',
+        namespace='agv',
         output='screen',
-        arguments=['-entity', 'agv', '-file', urdf, '-x', '0', '-y', '0', '-z', '0.3', '-timeout', '30', '--ros-args', '--log-level', 'DEBUG']
+        arguments=['-entity', 'agv', '-topic', 'robot_description', '-x', '0', '-y', '0', '-z', '0.3', '-timeout', '30', '--ros-args', '--log-level', 'DEBUG']
     )
 
     # AGV interface node
     interface = Node(
         package='agv_control',
         executable='agv_interface',
+        namespace='agv',
         output='screen',
         parameters=[{
             'use_sim_time': True,
-            'odom_topic': '/odom'
+            'odom_topic': '/agv/odom'
         }],
         arguments=['--ros-args', '--log-level', 'DEBUG']
     )
 
     return LaunchDescription([
-        LogInfo(msg='Starting Gazebo…'),
+        LogInfo(msg='Starting Gazebo with /agv namespace…'),
         gazebo_launch,
         LogInfo(msg='Validating URDF…'),
         ExecuteProcess(
             cmd=['check_urdf', urdf],
             output='screen'
         ),
-        LogInfo(msg='Launching nodes after 15s delay…'),
+        LogInfo(msg='Launching nodes with /agv namespace after 15s delay…'),
         TimerAction(
-            period=15.0,  # Increased delay for Gazebo initialization
+            period=15.0,
             actions=[rsp, spawn, interface]
         )
     ])

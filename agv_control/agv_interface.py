@@ -27,14 +27,14 @@ class PID:
 class AGVInterface(Node):
     def __init__(self):
         super().__init__('agv_interface')
-        self.declare_parameter('odom_topic', '/odom')
+        self.declare_parameter('odom_topic', '/agv/odom')
         odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
 
-        self.path_pub = self.create_publisher(Path, 'trajectory', 10)
-        self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.path_pub = self.create_publisher(Path, '/agv/trajectory', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/agv/cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
-        self.map_sub = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
-        self.joint_sub = self.create_subscription(JointState, '/joint_states', self.joint_callback, 10)
+        self.map_sub = self.create_subscription(OccupancyGrid, '/agv/map', self.map_callback, 10)
+        self.joint_sub = self.create_subscription(JointState, '/agv/joint_states', self.joint_callback, 10)
         self.timer = self.create_timer(0.1, self.control_loop)  # 10 Hz
 
         self.path = None
@@ -42,12 +42,12 @@ class AGVInterface(Node):
         self.current_pose = None
         self.map_data = None
         self.joint_states = None
-        self.pid = PID(Kp=0.5, Ki=0.0, Kd=0.05)  # Conservative gains
+        self.pid = PID(Kp=0.6, Ki=0.0, Kd=0.1)  # Stable gains
         self.linear_velocity = 10.0
         self.min_velocity = 0.1
         self.waypoint_threshold = 0.4
         self.lookahead_distance = 0.5
-        self.max_angular_vel = 0.5  # Reduced for stability
+        self.max_angular_vel = 0.4  # Reduced for smooth turns
         self.max_linear_vel = 10.0
         self.max_accel = 20.0
         self.prev_linear_vel = 0.0
@@ -95,24 +95,24 @@ class AGVInterface(Node):
             self.last_odom_time = time.time()
             if self.current_pose:
                 self.actual_path.append((self.current_pose.position.x, self.current_pose.position.y))
-                self.get_logger().info(f'Received odom: pos=({msg.pose.pose.position.x:.2f}, {msg.pose.pose.position.y:.2f})')
+                self.get_logger().info(f'Received /agv/odom: pos=({msg.pose.pose.position.x:.2f}, {msg.pose.pose.position.y:.2f})')
             else:
-                self.get_logger().warn('Received invalid odom pose')
+                self.get_logger().warn('Received invalid /agv/odom pose')
         except Exception as e:
             self.get_logger().error(f'Odom callback error: {e}')
 
     def joint_callback(self, msg):
         try:
             self.joint_states = msg
-            self.get_logger().debug(f'Received joint states: {msg.name}')
+            self.get_logger().debug(f'Received /agv/joint_states: {msg.name}')
             if 'base_to_rear_left' not in msg.name or 'base_to_rear_right' not in msg.name:
-                self.get_logger().warn('Missing drive joints in /joint_states')
+                self.get_logger().warn('Missing drive joints in /agv/joint_states')
         except Exception as e:
             self.get_logger().error(f'Joint callback error: {e}')
 
     def map_callback(self, msg):
         self.map_data = msg
-        self.get_logger().info('Received map data')
+        self.get_logger().info('Received /agv/map data')
 
     def save_waypoints(self):
         try:
@@ -165,7 +165,7 @@ class AGVInterface(Node):
         self.current_waypoint_index = 0
         self.actual_path.clear()
         self.path_pub.publish(path)
-        self.get_logger().info(f'Published trajectory with {len(self.path)} waypoints')
+        self.get_logger().info(f'Published /agv/trajectory with {len(self.path)} waypoints')
         self.waypoints.clear()
 
     def control_loop(self):
@@ -384,7 +384,7 @@ class AGVInterface(Node):
                     f"- Odom topic: {self.get_parameter('odom_topic').value}",
                     "- Plugin: libgazebo_ros_diff_drive.so",
                     "- Gazebo logs",
-                    "- ROS topic: ros2 topic echo /odom",
+                    "- ROS topic: ros2 topic echo /agv/odom",
                     "- ROS/Gazebo versions",
                 ]
                 warning_surface = pygame.Surface((300, 200), pygame.SRCALPHA)
@@ -432,7 +432,7 @@ class AGVInterface(Node):
 
             # Debug topics
             if not self.current_pose:
-                self.get_logger().warn('No pose data; check /odom')
+                self.get_logger().warn('No pose data; check /agv/odom')
             if not self.joint_states or len(self.joint_states.name) < 4:
                 self.get_logger().warn(f'Missing joints; expected 4, got {len(self.joint_states.name) if self.joint_states else 0}')
 
@@ -498,10 +498,10 @@ class AGVInterface(Node):
 
             # Sanitize cmd_vel
             if any(isnan(v) or isinf(v) for v in [twist.linear.x, twist.angular.z]):
-                self.get_logger().error(f'Invalid cmd_vel: linear.x={twist.linear.x:.2f}, angular.z={twist.angular.z:.2f}')
+                self.get_logger().error(f'Invalid /agv/cmd_vel: linear.x={twist.linear.x:.2f}, angular.z={twist.angular.z:.2f}')
                 twist = Twist()
             elif abs(twist.linear.x) > self.max_linear_vel or abs(twist.angular.z) > self.max_angular_vel:
-                self.get_logger().warn(f'Clamping cmd_vel: linear.x={twist.linear.x:.2f}, angular.z={twist.angular.z:.2f}')
+                self.get_logger().warn(f'Clamping /agv/cmd_vel: linear.x={twist.linear.x:.2f}, angular.z={twist.angular.z:.2f}')
                 twist.linear.x = max(min(twist.linear.x, self.max_linear_vel), -self.max_linear_vel)
                 twist.angular.z = max(min(twist.angular.z, self.max_angular_vel), -self.max_angular_vel)
 
