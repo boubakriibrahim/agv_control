@@ -16,13 +16,13 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="100"/> <!-- Increased for stability -->
-      <inertia ixx="15.0" ixy="0.0" ixz="0.0" iyy="15.0" iyz="0.0" izz="25.0"/>
+      <mass value="150"/> <!-- Increased for stability -->
+      <inertia ixx="20.0" ixy="0.0" ixz="0.0" iyy="20.0" iyz="0.0" izz="30.0"/>
     </inertial>
   </link>
   <gazebo reference="base_link">
     <material>Gazebo/Blue</material>
-    <mu1>0.8</mu1> <!-- Increased friction -->
+    <mu1>0.8</mu1>
     <mu2>0.8</mu2>
   </gazebo>
 
@@ -43,7 +43,7 @@
       <surface>
         <friction>
           <ode>
-            <mu>0.8</mu> <!-- Increased friction -->
+            <mu>0.8</mu>
             <mu2>0.8</mu2>
             <fdir1>0 1 0</fdir1>
             <slip1>0.0</slip1>
@@ -52,14 +52,14 @@
         </friction>
         <contact>
           <ode>
-            <kp>10000000.0</kp> <!-- Increased for stability -->
-            <kd>1000.0</kd> <!-- Adjusted -->
+            <kp>10000000.0</kp>
+            <kd>1000.0</kd>
           </ode>
         </contact>
       </surface>
     </collision>
     <inertial>
-      <mass value="1.0"/> <!-- Increased for realism -->
+      <mass value="1.0"/>
       <inertia ixx="0.008" ixy="0.0" ixz="0.0" iyy="0.008" iyz="0.0" izz="0.016"/>
     </inertial>
   </link>
@@ -138,7 +138,7 @@
         </friction>
         <contact>
           <ode>
-            <kp>100 NLS00000.0</kp>
+            <kp>10000000.0</kp>
             <kd>1000.0</kd>
           </ode>
         </contact>
@@ -204,8 +204,8 @@
     <child link="front_left_wheel"/>
     <origin xyz="0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Caster wheel -->
-    <limit effort="10" velocity="20"/> <!-- Reduced for stability -->
-    <dynamics damping="0.5" friction="0.2"/> <!-- Increased damping -->
+    <limit effort="10" velocity="20"/>
+    <dynamics damping="1.0" friction="0.5"/> <!-- Increased damping -->
   </joint>
   <joint name="base_to_front_right" type="continuous">
     <parent link="base_link"/>
@@ -213,23 +213,23 @@
     <origin xyz="0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Caster wheel -->
     <limit effort="10" velocity="20"/>
-    <dynamics damping="0.5" friction="0.2"/>
+    <dynamics damping="1.0" friction="0.5"/>
   </joint>
-  <joint name="base_to_rear_left" type="continuous">
+  <joint name="base_to_rear_left" type="revolute">
     <parent link="base_link"/>
     <child link="rear_left_wheel"/>
     <origin xyz="-0.75 0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Drive axis -->
-    <limit effort="200" velocity="20"/> <!-- Adjusted for control -->
-    <dynamics damping="0.5" friction="0.2"/>
+    <limit lower="-1.5708" upper="1.5708" effort="50" velocity="10"/> <!-- Limited to ±90 degrees -->
+    <dynamics damping="1.0" friction="0.5"/>
   </joint>
-  <joint name="base_to_rear_right" type="continuous">
+  <joint name="base_to_rear_right" type="revolute">
     <parent link="base_link"/>
     <child link="rear_right_wheel"/>
     <origin xyz="-0.75 -0.45 -0.25" rpy="1.5708 0 0"/>
     <axis xyz="0 1 0"/> <!-- Drive axis -->
-    <limit effort="200" velocity="20"/>
-    <dynamics damping="0.5" friction="0.2"/>
+    <limit lower="-1.5708" upper="1.5708" effort="50" velocity="10"/> <!-- Limited to ±90 degrees -->
+    <dynamics damping="1.0" friction="0.5"/>
   </joint>
 
   <!-- Gazebo plugins -->
@@ -251,10 +251,10 @@
       <right_joint>base_to_rear_right</right_joint>
       <wheel_separation>0.9</wheel_separation>
       <wheel_diameter>0.3</wheel_diameter>
-      <max_wheel_torque>200.0</max_wheel_torque> <!-- Reduced -->
-      <max_wheel_acceleration>20.0</max_wheel_acceleration> <!-- Reduced -->
+      <max_wheel_torque>50.0</max_wheel_torque> <!-- Reduced -->
+      <max_wheel_acceleration>5.0</max_wheel_acceleration> <!-- Reduced -->
       <wheel_torque_ratio>1.0</wheel_torque_ratio>
-      <update_rate>100.0</update_rate> <!-- Reduced for stability -->
+      <update_rate>50.0</update_rate> <!-- Reduced for stability -->
     </plugin>
   </gazebo>
 </robot>

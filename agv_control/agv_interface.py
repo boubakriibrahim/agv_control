@@ -9,24 +9,6 @@ import sys
 import time
 import os
 
-class PID:
-    def __init__(self, Kp, Ki, Kd, integral_limit=10.0):
-        self.Kp = Kp
-        self.Ki = Ki
-        self.Kd = Kd
-        self.integral_limit = integral_limit
-        self.prev_error = 0.0
-        self.integral = 0.0
-
-    def compute(self, error, dt):
-        self.integral += error * dt
-        # Limit integral to prevent windup
-        self.integral = max(min(self.integral, self.integral_limit), -self.integral_limit)
-        derivative = (error - self.prev_error) / dt if dt > 0 else 0.0
-        output = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
-        self.prev_error = error
-        return output
-
 class AGVInterface(Node):
     def __init__(self):
         super().__init__('agv_interface')
@@ -45,15 +27,13 @@ class AGVInterface(Node):
         self.current_pose = None
         self.map_data = None
         self.joint_states = None
-        self.pid = PID(Kp=2.0, Ki=0.005, Kd=0.5, integral_limit=5.0)  # Tuned for precision
-        self.linear_velocity = 2.0  # Increased for faster movement
+        self.linear_velocity = 1.0  # Base speed
         self.min_velocity = 0.2
-        self.waypoint_threshold = 0.3  # Increased for reliable detection
-        self.lookahead_distance = 0.5  # Adjusted for dynamic lookahead
-        self.max_angular_vel = 1.0  # Increased slightly for responsiveness
-        self.max_linear_vel = 5.0  # Increased for faster movement
-        self.max_accel = 1.0
-        self.prev_linear_vel = 0.0
+        self.waypoint_threshold = 0.5  # Increased for smooth transitions
+        self.max_angular_vel = 0.5  # Reduced for gentle turns
+        self.max_linear_vel = 2.0  # Reduced for stability
+        self.kv = 0.5  # Linear velocity gain
+        self.kw = 0.3  # Angular velocity gain
         self.actual_path = []
         self.waypoints = []
         self.mode = 'trajectory'
@@ -151,7 +131,6 @@ class AGVInterface(Node):
             pose = PoseStamped()
             pose.header.frame_id = 'odom'
             pose.header.stamp = path.header.stamp
-            # Corrected coordinate transformation
             x = (wp[0] - self.screen_width / 2) / self.scale + self.view_offset_x / self.scale
             y = -(wp[1] - self.screen_height / 2) / self.scale + self.view_offset_y / self.scale
             if abs(x) > 10 or abs(y) > 10:
@@ -205,29 +184,11 @@ class AGVInterface(Node):
                     elif event.key == pygame.K_v:
                         self.mode = 'view'
                         self.get_logger().info('Switched to view mode')
-                    elif event.key == pygame.K_p:
-                        self.pid.Kp += 0.1
-                        self.get_logger().info(f'Increased Kp to {self.pid.Kp:.2f}')
-                    elif event.key == pygame.K_p and pygame.key.get_mods() & pygame.KMOD_SHIFT:
-                        self.pid.Kp = max(0.1, self.pid.Kp - 0.1)
-                        self.get_logger().info(f'Decreased Kp to {self.pid.Kp:.2f}')
-                    elif event.key == pygame.K_i:
-                        self.pid.Ki += 0.001
-                        self.get_logger().info(f'Increased Ki to {self.pid.Ki:.3f}')
-                    elif event.key == pygame.K_i and pygame.key.get_mods() & pygame.KMOD_SHIFT:
-                        self.pid.Ki = max(0.0, self.pid.Ki - 0.001)
-                        self.get_logger().info(f'Decreased Ki to {self.pid.Ki:.3f}')
-                    elif event.key == pygame.K_d:
-                        self.pid.Kd += 0.05
-                        self.get_logger().info(f'Increased Kd to {self.pid.Kd:.2f}')
-                    elif event.key == pygame.K_d and pygame.key.get_mods() & pygame.KMOD_SHIFT:
-                        self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
-                        self.get_logger().info(f'Decreased Kd to {self.pid.Kd:.2f}')
                     elif event.key == pygame.K_u:
-                        self.linear_velocity += 0.5
+                        self.linear_velocity += 0.2
                         self.get_logger().info(f'Increased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_j:
-                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.5)
+                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.2)
                         self.get_logger().info(f'Decreased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
                         self.scale = min(200, self.scale + 10)
@@ -359,7 +320,6 @@ class AGVInterface(Node):
             joint_status = f'Joints: {len(self.joint_states.name) if self.joint_states else 0}/4'
             texts = [
                 f'Mode: {self.mode.capitalize()}',
-                f'Kp={self.pid.Kp:.2f} Ki={self.pid.Ki:.3f} Kd={self.pid.Kd:.2f}',
                 f'Speed: {self.linear_velocity:.2f} m/s',
                 f'Scale: {self.scale} px/m',
                 f'Waypoint: {self.current_waypoint_index}/{len(self.path) if self.path else 0}',
@@ -406,10 +366,8 @@ class AGVInterface(Node):
                     "v: View mode",
                     "s: Send trajectory",
                     "c: Clear waypoints",
-                    "p/i/d: Adjust PID gains",
-                    "Shift+p/i/d: Decrease PID",
-                    "u: Speed +0.5 m/s",
-                    "j: Speed -0.5 m/s",
+                    "u: Speed +0.2 m/s",
+                    "j: Speed -0.2 m/s",
                     "+/-: Zoom",
                     "Arrows: Pan",
                     "r: Reset view",
@@ -464,50 +422,29 @@ class AGVInterface(Node):
 
             # Compute distance
             distance = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
-            
-            # Check orientation before transitioning
-            desired_heading = atan2(target_y - current_y, target_x - current_x)
-            current_heading = self.get_yaw(self.current_pose.orientation)
-            heading_error = abs((desired_heading - current_heading + pi) % (2 * pi) - pi)
-            
-            if distance < self.waypoint_threshold and heading_error < 0.2:  # Ensure aligned
+            if distance < self.waypoint_threshold:
                 self.current_waypoint_index += 1
                 if self.current_waypoint_index < len(self.path):
                     self.get_logger().info(f'Reached waypoint {self.current_waypoint_index - 1}')
                 return
 
-            # Dynamic lookahead based on speed
-            dynamic_lookahead = max(self.lookahead_distance, self.linear_velocity * 0.2)
-            if distance > dynamic_lookahead:
-                target_x = current_x + dynamic_lookahead * cos(atan2(target_y - current_y, target_x - current_x))
-                target_y = current_y + dynamic_lookahead * sin(atan2(target_y - current_y, target_x - current_x))
-
-            # Heading error
+            # Kinematic model
             desired_heading = atan2(target_y - current_y, target_x - current_x)
             current_heading = self.get_yaw(self.current_pose.orientation)
-            error = desired_heading - current_heading
-            error = (error + pi) % (2 * pi) - pi  # Normalize to [-π, π]
+            heading_error = atan2(sin(desired_heading - current_heading), cos(desired_heading - current_heading))
 
-            # Exponential velocity scaling
-            velocity_scale = 1.0 - pow(2.71828, -distance / self.lookahead_distance)
-            scaled_velocity = self.linear_velocity * velocity_scale
-            scaled_velocity = max(self.min_velocity, scaled_velocity)
+            # Proportional control
+            linear_vel = self.kv * min(distance, 2.0) * self.linear_velocity
+            angular_vel = self.kw * heading_error
 
-            # PID control
-            dt = 0.1
-            try:
-                steering_angle = self.pid.compute(error, dt)
-                steering_angle = max(min(steering_angle, self.max_angular_vel), -self.max_angular_vel)
-            except Exception as e:
-                self.get_logger().error(f'PID error: {e}')
-                return
+            # Cap velocities
+            linear_vel = max(min(linear_vel, self.max_linear_vel), 0.0)
+            angular_vel = max(min(angular_vel, self.max_angular_vel), -self.max_angular_vel)
 
-            # Rate limit velocity
+            # Publish cmd_vel
             twist = Twist()
-            target_linear_vel = max(min(scaled_velocity, self.max_linear_vel), 0.0)
-            twist.linear.x = max(min(target_linear_vel, self.prev_linear_vel + self.max_accel * dt), 
-                               self.prev_linear_vel - self.max_accel * dt)
-            twist.angular.z = steering_angle
+            twist.linear.x = linear_vel
+            twist.angular.z = angular_vel
 
             # Sanitize cmd_vel
             if any(isnan(v) or isinf(v) for v in [twist.linear.x, twist.angular.z]):
@@ -519,8 +456,7 @@ class AGVInterface(Node):
                 twist.angular.z = max(min(twist.angular.z, self.max_angular_vel), -self.max_angular_vel)
 
             self.cmd_vel_pub.publish(twist)
-            self.prev_linear_vel = twist.linear.x
-            self.get_logger().debug(f'Distance: {distance:.2f}m, Heading Error: {error:.2f}rad, Velocity: {twist.linear.x:.2f}m/s, Steering: {twist.angular.z:.2f}rad/s')
+            self.get_logger().debug(f'Distance: {distance:.2f}m, Heading Error: {heading_error:.2f}rad, Linear Vel: {twist.linear.x:.2f}m/s, Angular Vel: {twist.angular.z:.2f}rad/s')
 
         except Exception as e:
             self.get_logger().error(f'Control loop error: {e}')
