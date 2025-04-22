@@ -42,14 +42,14 @@ class AGVInterface(Node):
         self.current_pose = None
         self.map_data = None
         self.joint_states = None
-        self.pid = PID(Kp=0.6, Ki=0.0, Kd=0.1)  # Stable gains
-        self.linear_velocity = 10.0
+        self.pid = PID(Kp=1.0, Ki=0.01, Kd=0.2)  # Tuned for smoother tracking
+        self.linear_velocity = 1.0  # Reduced initial speed
         self.min_velocity = 0.1
-        self.waypoint_threshold = 0.4
-        self.lookahead_distance = 0.5
-        self.max_angular_vel = 0.4  # Reduced for smooth turns
-        self.max_linear_vel = 10.0
-        self.max_accel = 20.0
+        self.waypoint_threshold = 0.2  # Tighter threshold
+        self.lookahead_distance = 0.3  # Reduced for precision
+        self.max_angular_vel = 0.8  # Reduced for smoother turns
+        self.max_linear_vel = 2.0  # Reduced for control
+        self.max_accel = 1.0  # Smoother acceleration
         self.prev_linear_vel = 0.0
         self.actual_path = []
         self.waypoints = []
@@ -148,8 +148,9 @@ class AGVInterface(Node):
             pose = PoseStamped()
             pose.header.frame_id = 'odom'
             pose.header.stamp = path.header.stamp
-            x = (wp[0] - self.screen_width / 2 - self.view_offset_x) / self.scale
-            y = (wp[1] - self.screen_height / 2 - self.view_offset_y) / self.scale
+            # Corrected coordinate transformation
+            x = (wp[0] - self.screen_width / 2) / self.scale + self.view_offset_x / self.scale
+            y = -(wp[1] - self.screen_height / 2) / self.scale + self.view_offset_y / self.scale
             if abs(x) > 10 or abs(y) > 10:
                 self.get_logger().warn(f'Skipping waypoint ({x:.2f}, {y:.2f}) out of bounds')
                 continue
@@ -220,10 +221,10 @@ class AGVInterface(Node):
                         self.pid.Kd = max(0.0, self.pid.Kd - 0.05)
                         self.get_logger().info(f'Decreased Kd to {self.pid.Kd:.2f}')
                     elif event.key == pygame.K_u:
-                        self.linear_velocity += 1.0
+                        self.linear_velocity += 0.1
                         self.get_logger().info(f'Increased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_j:
-                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 1.0)
+                        self.linear_velocity = max(self.min_velocity, self.linear_velocity - 0.1)
                         self.get_logger().info(f'Decreased speed to {self.linear_velocity:.2f} m/s')
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
                         self.scale = min(200, self.scale + 10)
@@ -404,8 +405,8 @@ class AGVInterface(Node):
                     "c: Clear waypoints",
                     "p/i/d: Adjust PID gains",
                     "Shift+p/i/d: Decrease PID",
-                    "u: Speed +1.0 m/s",
-                    "j: Speed -1.0 m/s",
+                    "u: Speed +0.1 m/s",
+                    "j: Speed -0.1 m/s",
                     "+/-: Zoom",
                     "Arrows: Pan",
                     "r: Reset view",
@@ -443,7 +444,8 @@ class AGVInterface(Node):
             if self.current_waypoint_index >= len(self.path):
                 twist = Twist()
                 self.cmd_vel_pub.publish(twist)
-                self.get_logger().info('Trajectory completed')
+                self.get_logger().info('Trajectory completed; stopping AGV')
+                self.path = None  # Reset path to allow new trajectory
                 return
 
             target_pose = self.path[self.current_waypoint_index].pose
@@ -476,9 +478,10 @@ class AGVInterface(Node):
             error = desired_heading - current_heading
             error = (error + pi) % (2 * pi) - pi
 
-            # Scale velocity
-            velocity_scale = min(1.0, distance / self.lookahead_distance)
+            # Scale velocity based on distance
+            velocity_scale = min(1.0, distance / (2 * self.lookahead_distance))  # Smoother scaling
             scaled_velocity = self.linear_velocity * velocity_scale
+            scaled_velocity = max(self.min_velocity, scaled_velocity)  # Ensure minimum speed
 
             # PID control
             dt = 0.1

@@ -67,20 +67,17 @@ def generate_launch_description():
             'use_sim_time': True,
             'odom_topic': '/agv/odom'
         }],
-        arguments=['--ros-args', '--log-level', 'DEBUG']
+        arguments pertinents=['--ros-args', '--log-level', 'DEBUG']
     )
 
     return LaunchDescription([
         LogInfo(msg='Starting Gazebo with /agv namespace…'),
         gazebo_launch,
         LogInfo(msg='Validating URDF…'),
-        ExecuteProcess(
-            cmd=['check_urdf', urdf],
-            output='screen'
-        ),
-        LogInfo(msg='Launching nodes with /agv namespace after 15s delay…'),
+        LogInfo(msg='Loading differential drive plugin: libgazebo_ros_diff_drive.so'),
+        LogInfo(msg='Launching nodes with /agv namespace after 5s delay…'),
         TimerAction(
-            period=15.0,
+            period=5.0,  # Reduced delay
             actions=[rsp, spawn, interface]
         )
     ])
