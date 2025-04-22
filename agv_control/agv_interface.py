@@ -9,6 +9,7 @@ import sys
 import time
 import os
 import yaml
+from ament_index_python.packages import get_package_share_directory
 
 class PID:
     def __init__(self, Kp, Ki, Kd):
@@ -28,6 +29,9 @@ class PID:
 class AGVInterface(Node):
     def __init__(self):
         super().__init__('agv_interface')
+        self.get_logger().info('Initializing AGVInterface node')
+
+        # Declare parameters
         self.declare_parameter('odom_topic', '/agv/odom')
         self.declare_parameter('config_path', os.path.join(
             get_package_share_directory('agv_control'), 'config', 'config.yaml'))
@@ -36,26 +40,35 @@ class AGVInterface(Node):
 
         # Load configuration
         try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-            self.pid = PID(
-                config.get('pid_kp', 1.5),
-                config.get('pid_ki', 0.0),
-                config.get('pid_kd', 0.3)
-            )
-            self.linear_velocity = config.get('linear_velocity', 5.0)
-            self.lookahead_distance = config.get('lookahead_distance', 0.7)
-            self.max_linear_vel = config.get('max_linear_vel', 7.0)
-            self.max_angular_vel = config.get('max_angular_vel', 0.5)
-            self.get_logger().info(f'Loaded config: {config}')
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                self.pid = PID(
+                    config.get('pid_kp', 1.5),
+                    config.get('pid_ki', 0.0),
+                    config.get('pid_kd', 0.3)
+                )
+                self.linear_velocity = config.get('linear_velocity', 5.0)
+                self.lookahead_distance = config.get('lookahead_distance', 0.7)
+                self.max_linear_vel = config.get('max_linear_vel', 7.0)
+                self.max_angular_vel = config.get('max_angular_vel', 0.5)
+                self.get_logger().info(f'Loaded config: {config}')
+            else:
+                self.get_logger().warn(f'Config file {config_path} not found; using defaults')
+                self.pid = PID(Kp=1.5, Ki=0.0, Kd=0.3)
+                self.linear_velocity = 5.0
+                self.lookahead_distance = 0.7
+                self.max_linear_vel = 7.0
+                self.max_angular_vel = 0.5
         except Exception as e:
-            self.get_logger().error(f'Failed to load config: {e}')
+            self.get_logger().error(f'Failed to load config: {e}; using defaults')
             self.pid = PID(Kp=1.5, Ki=0.0, Kd=0.3)
             self.linear_velocity = 5.0
             self.lookahead_distance = 0.7
             self.max_linear_vel = 7.0
             self.max_angular_vel = 0.5
 
+        # ROS 2 setup
         self.path_pub = self.create_publisher(Path, '/agv/trajectory', 10)
         self.cmd_vel_pub = self.create_publisher(Twist, '/agv/cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
@@ -63,6 +76,7 @@ class AGVInterface(Node):
         self.joint_sub = self.create_subscription(JointState, '/agv/joint_states', self.joint_callback, 10)
         self.timer = self.create_timer(0.1, self.control_loop)  # 10 Hz
 
+        # Initialize state
         self.path = None
         self.current_pose = None
         self.map_data = None
@@ -84,30 +98,37 @@ class AGVInterface(Node):
         self.last_odom_time = None
         self.odom_timeout = 5.0
         self.path_log_file = 'path_log.txt'
+        self.screen = None
 
         # Pygame setup
-        pygame.init()
-        self.screen_width = 1200
-        self.screen_height = 800
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-        pygame.display.set_caption('AGV Interface')
-        self.bg_color = (255, 255, 255)
-        self.grid_color = (200, 200, 200)
-        self.axis_color = (0, 0, 0)
-        self.waypoint_color = (0, 0, 255)
-        self.trajectory_color = (0, 0, 0)
-        self.agv_color = (255, 0, 0)
-        self.actual_path_color = (0, 255, 0)
-        self.obstacle_color = (100, 100, 100)
-        self.placeholder_color = (150, 150, 150)
-        self.text_bg_color = (255, 255, 255, 180)
-        self.warning_color = (255, 100, 100, 200)
-        self.waiting_color = (255, 165, 0, 200)
-        self.point_radius = 5
-        self.agv_radius = 10
-        self.clock = pygame.time.Clock()
-        self.screen.fill(self.bg_color)
-        pygame.display.flip()
+        try:
+            pygame.init()
+            self.get_logger().info('Pygame initialized successfully')
+            self.screen_width = 1200
+            self.screen_height = 800
+            self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+            pygame.display.set_caption('AGV Interface')
+            self.bg_color = (255, 255, 255)
+            self.grid_color = (200, 200, 200)
+            self.axis_color = (0, 0, 0)
+            self.waypoint_color = (0, 0, 255)
+            self.trajectory_color = (0, 0, 0)
+            self.agv_color = (255, 0, 0)
+            self.actual_path_color = (0, 255, 0)
+            self.obstacle_color = (100, 100, 100)
+            self.placeholder_color = (150, 150, 150)
+            self.text_bg_color = (255, 255, 255, 180)
+            self.warning_color = (255, 100, 100, 200)
+            self.waiting_color = (255, 165, 0, 200)
+            self.point_radius = 5
+            self.agv_radius = 10
+            self.clock = pygame.time.Clock()
+            self.screen.fill(self.bg_color)
+            pygame.display.flip()
+            self.get_logger().info('Pygame display set up successfully')
+        except Exception as e:
+            self.get_logger().error(f'Failed to initialize Pygame: {e}')
+            self.screen = None  # Continue without interface if Pygame fails
 
     def odom_callback(self, msg):
         try:
@@ -213,6 +234,10 @@ class AGVInterface(Node):
 
     def control_loop(self):
         try:
+            if self.screen is None:
+                self.get_logger().warn('Pygame interface not available; skipping display update')
+                return
+
             # Update blink state
             current_time = time.time()
             if current_time - self.last_blink_time > 0.5:
@@ -479,18 +504,16 @@ class AGVInterface(Node):
             pygame.display.flip()
             self.clock.tick(60)
 
-            # Debug topics
+            # Pure pursuit controller
             if not self.current_pose:
                 self.get_logger().warn('No pose data; check /agv/odom')
                 return
             if not self.joint_states or len(self.joint_states.name) < 4:
                 self.get_logger().warn(f'Missing joints; expected 4, got {len(self.joint_states.name) if self.joint_states else 0}')
-
             if self.path is None:
                 self.get_logger().warn('Waiting for path')
                 return
 
-            # Pure pursuit controller
             current_x = self.current_pose.position.x
             current_y = self.current_pose.position.y
             current_yaw = self.get_yaw(self.current_pose.orientation)
@@ -582,10 +605,13 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        node.get_logger().error(f'Node crashed: {e}')
     finally:
         node.destroy_node()
         rclpy.shutdown()
-        pygame.quit()
+        if pygame.get_init():
+            pygame.quit()
 
 if __name__ == '__main__':
     main()
