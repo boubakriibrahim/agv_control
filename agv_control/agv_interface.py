@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Path, Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist, PoseStamped
+from sensor_msgs.msg import JointState
 from math import atan2, sqrt, pi, cos, sin, isnan, isinf
 import pygame
 import sys
@@ -33,19 +34,21 @@ class AGVInterface(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
         self.map_sub = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
+        self.joint_sub = self.create_subscription(JointState, '/joint_states', self.joint_callback, 10)
         self.timer = self.create_timer(0.1, self.control_loop)  # 10 Hz
 
         self.path = None
         self.current_waypoint_index = 0
         self.current_pose = None
         self.map_data = None
-        self.pid = PID(Kp=1.0, Ki=0.0, Kd=0.2)  # Simplified gains
-        self.linear_velocity = 10.0  # Restored 10 m/s
+        self.joint_states = None
+        self.pid = PID(Kp=0.8, Ki=0.0, Kd=0.1)  # Conservative gains
+        self.linear_velocity = 10.0
         self.min_velocity = 0.1
         self.waypoint_threshold = 0.4
         self.lookahead_distance = 0.5
         self.max_angular_vel = 0.8
-        self.max_linear_vel = 10.0  # Restored
+        self.max_linear_vel = 10.0
         self.max_accel = 20.0
         self.prev_linear_vel = 0.0
         self.actual_path = []
@@ -98,6 +101,13 @@ class AGVInterface(Node):
                 self.get_logger().warn('Received odom with invalid pose')
         except Exception as e:
             self.get_logger().error(f'Odom callback error: {e}')
+
+    def joint_callback(self, msg):
+        try:
+            self.joint_states = msg
+            self.get_logger().debug(f'Received joint states: {msg.name}')
+        except Exception as e:
+            self.get_logger().error(f'Joint callback error: {e}')
 
     def map_callback(self, msg):
         self.map_data = msg
@@ -366,6 +376,7 @@ class AGVInterface(Node):
                     'Waiting for Odometry' if self.last_odom_time and (time.time() - self.last_odom_time < self.odom_timeout)
                     else 'Not Spawned'
                 )
+                joint_status = f'Joints: {len(self.joint_states.name) if self.joint_states else 0}/4'
                 texts = [
                     f'Mode: {self.mode.capitalize()}',
                     f'Kp={self.pid.Kp:.2f} Ki={self.pid.Ki:.3f} Kd={self.pid.Kd:.2f}',
@@ -374,6 +385,7 @@ class AGVInterface(Node):
                     f'Waypoint: {self.current_waypoint_index}/{len(self.path) if self.path else 0}',
                     f'Pose: ({self.current_pose.position.x:.2f}, {self.current_pose.position.y:.2f})' if self.current_pose else 'Pose: N/A',
                     f'AGV: {odom_status}',
+                    f'{joint_status}',
                     f'Last Odom: {time.strftime("%H:%M:%S", time.localtime(self.last_odom_time)) if self.last_odom_time else "N/A"}',
                 ]
                 text_y = 10
@@ -450,6 +462,12 @@ class AGVInterface(Node):
             pygame.display.flip()
             self.clock.tick(60)  # 60 FPS
 
+            # Debug topics
+            if not self.current_pose:
+                self.get_logger().warn('No pose data; check /odom topic')
+            if not self.joint_states or 'base_to_rear_left' not in self.joint_states.name:
+                self.get_logger().warn('Missing joint states; check /joint_states')
+
             if self.path is None or self.current_pose is None:
                 self.get_logger().warn('Waiting for path or pose data')
                 return
@@ -472,15 +490,15 @@ class AGVInterface(Node):
                 return
 
             # Compute distance to waypoint
-            distância = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
-            if distância < self.waypoint_threshold:
+            distance = sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
+            if distance < self.waypoint_threshold:
                 self.current_waypoint_index += 1
                 if self.current_waypoint_index < len(self.path):
                     self.get_logger().info(f'Reached waypoint {self.current_waypoint_index - 1}')
                 return
 
             # Lookahead point adjustment
-            if distância > self.lookahead_distance:
+            if distance > self.lookahead_distance:
                 target_x = current_x + self.lookahead_distance * cos(atan2(target_y - current_y, target_x - current_x))
                 target_y = current_y + self.lookahead_distance * sin(atan2(target_y - current_y, target_x - current_x))
 
@@ -491,7 +509,7 @@ class AGVInterface(Node):
             error = (error + pi) % (2 * pi) - pi
 
             # Scale velocity based on distance
-            velocity_scale = min(1.0, distância / self.lookahead_distance)
+            velocity_scale = min(1.0, distance / self.lookahead_distance)
             scaled_velocity = self.linear_velocity * velocity_scale
 
             # PID control
@@ -521,7 +539,7 @@ class AGVInterface(Node):
 
             self.cmd_vel_pub.publish(twist)
             self.prev_linear_vel = twist.linear.x
-            self.get_logger().debug(f'Distance: {distância:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {twist.linear.x:.2f}m/s')
+            self.get_logger().debug(f'Distance: {distance:.2f}m, Steering: {steering_angle:.2f}rad, Velocity: {twist.linear.x:.2f}m/s')
 
         except Exception as e:
             self.get_logger().error(f'Control loop error: {e}')
