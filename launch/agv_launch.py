@@ -67,7 +67,7 @@ def generate_launch_description():
             'use_sim_time': True,
             'odom_topic': '/agv/odom'
         }],
-        arguments pertinents=['--ros-args', '--log-level', 'DEBUG']
+        arguments=['--ros-args', '--log-level', 'DEBUG']  # Corrected 'pertinents' to 'arguments'
     )
 
     return LaunchDescription([
@@ -77,7 +77,7 @@ def generate_launch_description():
         LogInfo(msg='Loading differential drive plugin: libgazebo_ros_diff_drive.so'),
         LogInfo(msg='Launching nodes with /agv namespace after 5s delay…'),
         TimerAction(
-            period=5.0,  # Reduced delay
+            period=5.0,
             actions=[rsp, spawn, interface]
         )
     ])
